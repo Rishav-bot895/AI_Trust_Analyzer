@@ -1,3 +1,4 @@
+# Updated to reflect both backend and frontend structures
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
@@ -17,6 +18,7 @@
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -25,8 +27,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
 .env
+.env*.local
 
 # vercel
 .vercel
@@ -34,3 +36,45 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# Python
+/venv/
+/env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Frontend specific
+/frontend/node_modules
+/frontend/.next
+/frontend/out
+/frontend/build
+/frontend/.vercel
+
+# Backend specific
+/backend/venv
+/backend/__pycache__
+/backend/*.py[cod]
+/backend/*.so
+/backend/.Python
+/backend/pip-log.txt
+/backend/pip-delete-this-directory.txt
+/backend/.pytest_cache/
