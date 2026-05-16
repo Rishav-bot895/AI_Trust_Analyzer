@@ -46,6 +46,7 @@ next-env.d.ts
 *.sublime-workspace
 
 # Python
+.venv/
 /venv/
 /env/
 __pycache__/
