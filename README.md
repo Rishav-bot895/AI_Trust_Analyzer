@@ -43,7 +43,13 @@ source .venv/bin/activate
 From the repository root:
 
 ```bash
-pip install -r requirements.txt
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Do not use global Python for this project. Use this interpreter for all backend commands:
+
+```text
+.venv\Scripts\python.exe
 ```
 
 ## 4) Install frontend dependencies
@@ -79,3 +85,4 @@ npm run start
 
 - Keep the virtual environment activated while working with Python dependencies.
 - If you installed dependencies previously in a different environment, reinstall them inside `.venv`.
+- Run backend tests with `.venv\Scripts\python.exe -m pytest`.
