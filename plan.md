@@ -111,11 +111,16 @@
 ### Task 1.4 — Create Pydantic schemas for `Claim` and `ClaimStatus`
 **Complexity**: LOW  
 **Files**: `backend/app/schemas/claim.py`  
-**Explanation**: Define the data shape for a single extracted claim, including its text, confidence score, and verification status.
+**Explanation**: Define the data shape for a single extracted claim, including its text, confidence score, and verification status. Support nuanced verification outcomes where a claim can be fully supported, partially supported, contradicted, unsupported, or unverifiable.
 
 **Scope**:
 - Create `backend/app/schemas/` directory with `__init__.py`
-- `ClaimStatus` enum: `SUPPORTED`, `CONTRADICTED`, `UNSUPPORTED`, `UNVERIFIABLE`
+- `ClaimStatus` enum: `SUPPORTED`, `PARTIALLY_SUPPORTED`, `CONTRADICTED`, `UNSUPPORTED`, `UNVERIFIABLE`
+  - `SUPPORTED`: Claim is fully verified by evidence
+  - `PARTIALLY_SUPPORTED`: Claim is mostly correct but has some inaccuracies or incomplete parts
+  - `CONTRADICTED`: Evidence directly contradicts the claim
+  - `UNSUPPORTED`: No evidence found to verify or contradict the claim
+  - `UNVERIFIABLE`: Claim is definitional, subjective, or about future events
 - `Claim` Pydantic model: `id: UUID`, `text: str`, `confidence: float` (0–1), `status: ClaimStatus`, `claim_index: int`, `source_span: str | None`
 - `ClaimCreate` model (no `id`, used for agent output before DB write)
 - All fields have docstring descriptions
@@ -136,24 +141,32 @@
 ### Task 1.5 — Create Pydantic schemas for `Evidence`
 **Complexity**: LOW  
 **Files**: `backend/app/schemas/evidence.py`  
-**Explanation**: Define the shape for a retrieved evidence piece, including its source URL, snippet text, and relevance score.
+**Explanation**: Define the shape for a retrieved evidence piece, including its source URL, snippet text, relevance score, and polarity (whether it supports or contradicts the claim). Evidence polarity is determined by the Verifier agent when comparing evidence against claims.
 
 **Scope**:
 - `EvidenceSource` enum: `WEB_SEARCH`, `VECTOR_STORE`
-- `Evidence` Pydantic model: `id: UUID`, `claim_id: UUID`, `snippet: str`, `source_url: str | None`, `source_title: str | None`, `relevance_score: float`, `source_type: EvidenceSource`, `retrieved_at: datetime`
-- `EvidenceCreate` model (no `id`)
+- `EvidencePolarity` enum: `FOR`, `AGAINST`
+  - `FOR`: Evidence supports the claim
+  - `AGAINST`: Evidence contradicts the claim
+- `Evidence` Pydantic model: `id: UUID`, `claim_id: UUID`, `snippet: str`, `source_url: str | None`, `source_title: str | None`, `relevance_score: float`, `source_type: EvidenceSource`, `polarity: EvidencePolarity | None`, `retrieved_at: datetime`
+  - `polarity` is `None` initially (set by Verifier agent), becomes `FOR` or `AGAINST` after verification
+- `EvidenceCreate` model (no `id`, `polarity` defaults to `None`)
 - URL field validated with `AnyHttpUrl` type
 
 **Acceptance Criteria**:
 - `Evidence(**data)` validates with all fields
 - Invalid URL raises `ValidationError`
 - `source_url: None` is allowed (vector store sources may lack URLs)
+- `polarity: None` is allowed initially (evidence retrieved before verification)
+- Polarity can be set to `FOR` or `AGAINST` after verification
 
 **Tests**:
 - `test_evidence_valid_construction`
 - `test_evidence_invalid_url_raises`
 - `test_evidence_none_url_allowed`
 - `test_evidence_source_enum`
+- `test_evidence_polarity_enum`
+- `test_evidence_polarity_none_allowed`
 
 ---
 
@@ -448,26 +461,35 @@
 ### Task 2.7 — Implement Verifier agent — claim vs evidence comparison
 **Complexity**: HIGH  
 **Files**: `backend/app/agents/verifier.py`  
-**Explanation**: The Verifier agent is the heart of the system. For each claim, it shows the LLM the claim text plus its retrieved evidence and asks it to determine a verdict.
+**Explanation**: The Verifier agent is the heart of the system. For each claim, it shows the LLM the claim text plus its retrieved evidence and asks it to determine a verdict. The Verifier also classifies each evidence item as supporting (`FOR`) or contradicting (`AGAINST`) the claim, enabling nuanced analysis and partially-supported claims.
 
 **Scope**:
 - For each claim, gather its evidence snippets from `state["evidence"]`
-- Build prompt: `"Claim: {text}\nEvidence:\n{snippets}\nVerdict: SUPPORTED | CONTRADICTED | UNSUPPORTED | UNVERIFIABLE"`
+- Build prompt: `"Claim: {text}\nEvidence:\n{snippets}\nVerdict: SUPPORTED | PARTIALLY_SUPPORTED | CONTRADICTED | UNSUPPORTED | UNVERIFIABLE\nFor each evidence snippet, classify as FOR (supports) or AGAINST (contradicts) the claim"`
 - Call `get_llm()` once per claim (or batch if cost is a concern)
-- Parse response to extract the verdict label
+- Parse response to extract:
+  - The verdict label (can now be `PARTIALLY_SUPPORTED`)
+  - Evidence polarities (FOR/AGAINST) for each evidence item
 - Update each claim dict with `"status": ClaimStatus.value`
+- Update each evidence dict with `"polarity": EvidencePolarity.value` (FOR or AGAINST)
 
 **Acceptance Criteria**:
 - Given a claim with clear supporting evidence, returns `SUPPORTED`
+- Given a claim with mostly-correct evidence and one contradicting detail, returns `PARTIALLY_SUPPORTED`
 - Given a claim that evidence directly contradicts, returns `CONTRADICTED`
 - Given a claim with no retrieved evidence, returns `UNSUPPORTED`
 - Invalid LLM verdict defaults to `UNVERIFIABLE` without crashing
+- Each evidence item has polarity set to `FOR` or `AGAINST`
+- Evidence supporting a contradicted claim is marked `AGAINST`, and vice versa
 
 **Tests**:
 - `test_verifier_supported_claim` (mock LLM)
+- `test_verifier_partially_supported_claim` (mixed evidence)
 - `test_verifier_contradicted_claim`
 - `test_verifier_no_evidence_returns_unsupported`
 - `test_verifier_invalid_verdict_defaults_to_unverifiable`
+- `test_verifier_classifies_evidence_polarity_for` (evidence supports claim)
+- `test_verifier_classifies_evidence_polarity_against` (evidence contradicts claim)
 - `test_verifier_timeline_entry_added`
 
 ---
@@ -548,27 +570,40 @@
 ### Task 2.11 — Implement Judge agent — trust score calculation
 **Complexity**: HIGH  
 **Files**: `backend/app/agents/judge.py`  
-**Explanation**: The Judge synthesizes all signals from the previous agents into a single trust score (0–100) representing how trustworthy the analyzed AI response is.
+**Explanation**: The Judge synthesizes all signals from the previous agents into a single trust score (0–100) representing how trustworthy the analyzed AI response is. The scoring formula now accounts for partially-supported claims and evidence polarity to provide more nuanced trust assessment.
 
 **Scope**:
-- Inputs: `state["verified_claims"]` (with statuses), `state["critique"]`
-- Formula basis: weighted average of claim verdicts: SUPPORTED=1.0, UNSUPPORTED=0.4, CONTRADICTED=0.0, UNVERIFIABLE=0.5
+- Inputs: `state["verified_claims"]` (with statuses and evidence polarity), `state["critique"]`
+- Formula basis: weighted average of claim verdicts accounting for evidence quality:
+  - `SUPPORTED`: 1.0 (all evidence is FOR)
+  - `PARTIALLY_SUPPORTED`: 0.65 (mixed FOR/AGAINST evidence, majority FOR)
+  - `UNSUPPORTED`: 0.4 (no relevant evidence found)
+  - `CONTRADICTED`: 0.0 (majority of evidence is AGAINST)
+  - `UNVERIFIABLE`: 0.5 (definitional or unfalsifiable)
+- Apply evidence polarity scoring: if a claim is marked SUPPORTED/PARTIALLY_SUPPORTED, boost score by 2 points for every 3+ FOR evidence items; if CONTRADICTED/PARTIALLY_SUPPORTED, reduce by 2 points for every 3+ AGAINST evidence items
 - Apply critic penalty: subtract 5 points per logical issue found (min 0)
 - Final score scaled 0–100 (round to nearest integer)
 - Store in `state["trust_score"]`
 
 **Acceptance Criteria**:
 - 100% SUPPORTED claims with no critique issues → score near 100
+- 100% PARTIALLY_SUPPORTED claims with balanced evidence → score approximately 65
 - 100% CONTRADICTED claims → score near 0
 - Score never goes below 0 or above 100
 - Single claim UNSUPPORTED → score approximately 40
+- PARTIALLY_SUPPORTED claim with 5 FOR and 1 AGAINST evidence → receives partial boost vs full SUPPORTED
+- Evidence polarity directly influences claim verdict (SUPPORTED only if majority FOR)
 
 **Tests**:
 - `test_judge_all_supported_high_score`
+- `test_judge_all_partially_supported_mid_score`
 - `test_judge_all_contradicted_low_score`
 - `test_judge_score_clamped_to_0_100`
 - `test_judge_critic_penalty_applied`
 - `test_judge_single_unsupported_claim`
+- `test_judge_evidence_polarity_boosts_supported`
+- `test_judge_evidence_polarity_reduces_contradicted`
+- `test_judge_mixed_evidence_counts_toward_partial_support`
 
 ---
 
