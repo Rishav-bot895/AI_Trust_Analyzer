@@ -44,6 +44,7 @@ chromadb>=0.5
 sqlalchemy>=2.0
 alembic>=1.13
 psycopg2-binary>=2.9
+aiosqlite>=0.20
 
 # Testing
 pytest>=8.0
