@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-	OPENAI_API_KEY: str
+	GEMINI_API_KEY: str
 	TAVILY_API_KEY: str
 	DATABASE_URL: str
 	CHROMA_PERSIST_DIR: str = "./data/chroma"
@@ -19,11 +19,11 @@ class Settings(BaseSettings):
 
 	model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-	@field_validator("OPENAI_API_KEY")
+	@field_validator("GEMINI_API_KEY")
 	@classmethod
-	def validate_openai_api_key(cls, value: str) -> str:
+	def validate_gemini_api_key(cls, value: str) -> str:
 		if not value or not value.strip():
-			raise ValueError("OPENAI_API_KEY must be a non-empty string")
+			raise ValueError("GEMINI_API_KEY must be a non-empty string")
 		return value
 
 	@field_validator("ALLOWED_ORIGINS", mode="before")

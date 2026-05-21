@@ -16,7 +16,7 @@ from app.db.models import Analysis, Claim
 def _reload_session_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Reload session module with controlled environment variables."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test_task_1_8.db")
     sys.modules.pop("app.core.config", None)

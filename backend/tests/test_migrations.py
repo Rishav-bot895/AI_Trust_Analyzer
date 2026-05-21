@@ -15,7 +15,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 def _run_alembic(*args: str, database_url: str) -> subprocess.CompletedProcess[str]:
     """Run Alembic command with required env vars for settings validation."""
     env = os.environ.copy()
-    env["OPENAI_API_KEY"] = "test-openai-key"
+    env["GEMINI_API_KEY"] = "test-gemini-key"
     env["TAVILY_API_KEY"] = "test-tavily-key"
     env["DATABASE_URL"] = database_url
 
