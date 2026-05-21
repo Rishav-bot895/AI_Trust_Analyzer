@@ -6,7 +6,7 @@ from typing import Any, Protocol, cast
 
 from chromadb import PersistentClient
 from chromadb.api.models.Collection import Collection
-from langchain_openai import OpenAIEmbeddings
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 from app.core.config import settings
 
@@ -18,17 +18,16 @@ class _EmbeddingCallable(Protocol):
         """Return embeddings for the provided input texts."""
 
 
-class OpenAIChromaEmbeddingFunction:
-    """Adapter to use LangChain OpenAI embeddings with ChromaDB."""
+class LocalChromaEmbeddingFunction:
+    """Adapter to use local sentence-transformers embeddings with ChromaDB."""
 
     def __init__(self) -> None:
-        self._embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.OPENAI_API_KEY,
+        self._embeddings = SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2",
         )
 
     def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002
-        return self._embeddings.embed_documents(input)
+        return cast(list[list[float]], self._embeddings(input))
 
 
 _client: PersistentClient | None = None
@@ -44,9 +43,9 @@ def _get_client() -> PersistentClient:
 
 
 def _create_collection() -> Collection:
-    """Create or return the evidence collection using OpenAI embeddings."""
+    """Create or return the evidence collection using local embeddings."""
     client = _get_client()
-    embedding_function = cast(_EmbeddingCallable, OpenAIChromaEmbeddingFunction())
+    embedding_function = cast(_EmbeddingCallable, LocalChromaEmbeddingFunction())
     return client.get_or_create_collection(
         name="evidence",
         embedding_function=embedding_function,

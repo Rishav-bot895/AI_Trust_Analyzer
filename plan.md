@@ -1,18 +1,19 @@
 # AI Trust Analyzer — Implementation Plan
 
-**Project state**: Scaffolded but empty. All `.py` files, `main.py`, `config.py`, `router.py`, and `verifier.py` are blank. Frontend is stock Next.js boilerplate. No agents, no routes, no UI components exist yet.
+**Project state**: Phase 1 backend foundation is substantially implemented and tested. Treat this document as the execution plan from Phase 2 onward, plus alignment fixes for remaining gaps.
 
-**Goal**: Build a full-stack hallucination detection tool. User pastes an AI-generated response, five LangGraph agents (Extractor → Retriever → Verifier → Critic → Judge) analyze it, and a React UI displays trust scores, claim-by-claim verdicts, evidence citations, and an agent execution timeline.
+**Goal**: Build a full-stack factuality-risk analysis tool. User pastes an AI-generated response, five LangGraph agents (Extractor → Retriever → Verifier → Critic → Judge) analyze it, and a React UI displays trust scores, claim-by-claim verdicts, evidence citations, and an agent execution timeline.
+This is decision-support, not definitive hallucination detection; outputs must include transparent confidence labeling and evidence provenance.
 
 ---
 
 ## Execution Strategy
 
-**Critical path**: Phase 1 → Phases 2 + 3 + 4 + 6 in parallel → Phase 5 → Phase 7
+**Critical path**: (Phase 1 complete) → Phases 2 + 3 + 4 + 6 in parallel → Phase 5 → Phase 7
 
 | Phase | Focus | Can start after |
 |-------|-------|-----------------|
-| 1 | Backend foundation | — (start now) |
+| 1 | Backend foundation | Completed |
 | 2 | Agent implementation | Phase 1 complete |
 | 3 | API routes | Phase 1 complete |
 | 4 | Frontend components | Phase 1 complete (mock data OK) |
@@ -64,14 +65,14 @@
 
 **Scope**:
 - Install `pydantic-settings` (add to `requirements.txt`)
-- `Settings` class fields: `OPENAI_API_KEY: str`, `TAVILY_API_KEY: str`, `DATABASE_URL: str`, `CHROMA_PERSIST_DIR: str = "./data/chroma"`, `ENVIRONMENT: str = "development"`, `ALLOWED_ORIGINS: list[str]`, `LOG_LEVEL: str = "INFO"`, `MAX_CLAIMS: int = 50`
+- `Settings` class fields: `GEMINI_API_KEY: str`, `TAVILY_API_KEY: str`, `DATABASE_URL: str`, `CHROMA_PERSIST_DIR: str = "./data/chroma"`, `ENVIRONMENT: str = "development"`, `ALLOWED_ORIGINS: list[str]`, `LOG_LEVEL: str = "INFO"`, `MAX_CLAIMS: int = 50`
 - `model_config = SettingsConfig(env_file=".env", env_file_encoding="utf-8")`
 - Expose a module-level `settings = Settings()` singleton
-- Validate that `OPENAI_API_KEY` is non-empty string
+- Validate that `GEMINI_API_KEY` is non-empty string
 
 **Acceptance Criteria**:
 - `from app.core.config import settings` works without errors
-- Missing `OPENAI_API_KEY` raises `ValidationError` at import time
+- Missing `GEMINI_API_KEY` raises `ValidationError` at import time
 - `.env.example` lists every required variable with placeholder values
 
 **Tests**:
@@ -85,21 +86,23 @@
 ### Task 1.3 — Add all missing packages to `requirements.txt`
 **Complexity**: LOW  
 **Files**: `requirements.txt`  
-**Explanation**: The current file is missing LangGraph, LangChain, Tavily, ChromaDB, SQLAlchemy, Alembic, pydantic-settings, and test tooling. Add exact pinned versions.
+**Explanation**: The current file is missing LangGraph, LangChain, Gemini integration, Tavily retrieval tooling, ChromaDB, SQLAlchemy, Alembic, pydantic-settings, and test tooling. Add exact pinned versions.
 
 **Scope**:
-- Add: `langgraph>=0.2`, `langchain>=0.2`, `langchain-openai>=0.1`, `langchain-community>=0.2`
+- Add: `langgraph>=0.2`, `langchain>=0.2`, `langchain-google-genai>=2.0`, `langchain-community>=0.2`
 - Add: `tavily-python>=0.3`
 - Add: `chromadb>=0.5`
+- Add: `sentence-transformers>=3.0`
 - Add: `sqlalchemy>=2.0`, `alembic>=1.13`
 - Add: `pydantic-settings>=2.0`
-- Add: `psycopg2-binary>=2.9` (for PostgreSQL)
+- Add: `asyncpg>=0.30` (async PostgreSQL driver)
+- Add: `slowapi>=0.1.9` (API rate limiting)
 - Add test dependencies: `pytest>=8.0`, `pytest-asyncio>=0.23`, `httpx>=0.27` (for TestClient), `pytest-cov>=5.0`
 - Run `pip install -r requirements.txt` to validate all packages resolve without conflicts
 
 **Acceptance Criteria**:
 - `pip install -r requirements.txt` completes without errors
-- `import langgraph`, `import chromadb`, `import tavily` all succeed
+- `import langgraph`, `import chromadb`, `import langchain_google_genai`, `import tavily` all succeed
 - No version conflicts reported by pip
 
 **Tests**:
@@ -176,7 +179,7 @@
 **Explanation**: Define the top-level request/response models for the analysis API — what the frontend sends and what it receives back.
 
 **Scope**:
-- `AnalysisRequest`: `prompt: str` (max 2000 chars), `response: str` (max 10000 chars), `model_name: str = "gpt-4o-mini"`, `include_comparison: bool = False`
+- `AnalysisRequest`: `prompt: str` (max 2000 chars), `response: str` (max 10000 chars), `model_name: str = "gemini-3.1-flash-lite"`, `include_comparison: bool = False`
 - `AnalysisStatus` enum: `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`
 - `AnalysisResponse`: `id: UUID`, `status: AnalysisStatus`, `trust_score: float | None`, `hallucination_risk: str | None`, `claims: list[Claim]`, `evidence: list[Evidence]`, `critique: str | None`, `verdict: str | None`, `created_at: datetime`, `completed_at: datetime | None`, `error: str | None`
 - `AnalysisListItem` (summary without nested claims/evidence)
@@ -268,7 +271,7 @@
 
 **Scope**:
 - `PersistentClient(path=settings.CHROMA_PERSIST_DIR)` creation
-- `get_or_create_collection("evidence", embedding_function=...)` using OpenAI embeddings
+- `get_or_create_collection("evidence", embedding_function=...)` using free local embeddings (`sentence-transformers`)
 - `add_documents(texts: list[str], metadatas: list[dict], ids: list[str])` function
 - `query_similar(query_text: str, n_results: int = 5) -> list[dict]` function
 - Lazy initialization — client created on first use, not at import time
@@ -310,22 +313,23 @@
 
 ## PHASE 2 — Agent Implementation
 > Agents 2.1–2.5 can be developed in parallel. LangGraph wiring (2.24–2.27) requires all five agents.
+> Migration note: Phase 1 is already complete; begin Phase 2 on the Gemini + Tavily (free tier) stack defined in this plan.
 
 ---
 
 ### Task 2.1 — Create agent base utilities and LLM factory
 **Complexity**: LOW  
 **Files**: `backend/app/agents/base.py`  
-**Explanation**: Shared utilities used by all five agents: an LLM factory that creates `ChatOpenAI` instances, a prompt template loader, and a timing decorator for the timeline.
+**Explanation**: Shared utilities used by all five agents: an LLM factory that creates `ChatGoogleGenerativeAI` instances (Gemini), a prompt template loader, and a timing decorator for the timeline.
 
 **Scope**:
-- `get_llm(model_name: str = "gpt-4o-mini", temperature: float = 0.0) -> ChatOpenAI`
+- `get_llm(model_name: str = "gemini-3.1-flash-lite", temperature: float = 0.0) -> ChatGoogleGenerativeAI`
 - `timed_agent(agent_name: str)` decorator that writes a `TimelineEvent` to `state["timeline"]` before and after the wrapped function runs
 - `parse_json_response(content: str) -> dict` — strips markdown code fences, then `json.loads`
 - Common system prompt snippets stored as constants
 
 **Acceptance Criteria**:
-- `get_llm()` returns a `ChatOpenAI` instance with correct model name
+- `get_llm()` returns a `ChatGoogleGenerativeAI` instance with correct model name
 - `@timed_agent("extractor")` wrapper adds a timeline entry with start/end timestamps
 - `parse_json_response("```json\n{...}\n```")` returns a Python dict
 
@@ -340,7 +344,7 @@
 ### Task 2.2 — Implement Claim Extractor agent — LLM call and prompt
 **Complexity**: MEDIUM  
 **Files**: `backend/app/agents/claim_extractor.py`  
-**Explanation**: The first agent in the pipeline. Sends the AI response text to GPT-4o-mini with a structured extraction prompt to get a list of atomic, verifiable claims.
+**Explanation**: The first agent in the pipeline. Sends the AI response text to Gemini (`gemini-3.1-flash-lite`) with a structured extraction prompt to get a list of atomic, verifiable claims.
 
 **Scope**:
 - System prompt: instructs model to extract atomic factual claims, ignore opinions
@@ -390,7 +394,7 @@
 ### Task 2.4 — Implement Retriever agent — Tavily web search
 **Complexity**: MEDIUM  
 **Files**: `backend/app/agents/retriever.py`  
-**Explanation**: For each extracted claim, query the Tavily search API to find supporting or contradicting web sources.
+**Explanation**: For each extracted claim, query the Tavily search API (free tier) to find supporting or contradicting web sources.
 
 **Scope**:
 - Import `TavilyClient` from `tavily-python`
@@ -715,7 +719,7 @@
 ### Task 3.1 — Implement `POST /api/v1/analyze` route
 **Complexity**: MEDIUM  
 **Files**: `backend/app/api/routes/analysis.py`  
-**Explanation**: Accept an `AnalysisRequest`, create a DB record with `PENDING` status, fire off the LangGraph workflow in a background task, and immediately return the analysis ID.
+**Explanation**: Accept an `AnalysisRequest`, create a DB record with `PENDING` status, fire off the LangGraph workflow in a background task, and immediately return the analysis ID. For MVP use FastAPI `BackgroundTask`; for production migration path, move execution to a durable queue worker.
 
 **Scope**:
 - Create `analysis_router = APIRouter(prefix="/analyze", tags=["analysis"])`
@@ -836,10 +840,10 @@
 ### Task 3.6 — Implement `POST /api/v1/compare` route
 **Complexity**: MEDIUM  
 **Files**: `backend/app/api/routes/comparison.py`  
-**Explanation**: Accept a prompt and response, run the full analysis pipeline against multiple LLMs (e.g. gpt-4o-mini, gpt-4o, deepseek), and return all results side by side.
+**Explanation**: Accept a prompt and response, run the full analysis pipeline against multiple free-tier models (Gemini variants), and return all results side by side.
 
 **Scope**:
-- `ComparisonRequest`: `prompt: str`, `response: str`, `models: list[str] = ["gpt-4o-mini", "gpt-4o"]`
+- `ComparisonRequest`: `prompt: str`, `response: str`, `models: list[str] = ["gemini-3.1-flash-lite"]`
 - `ComparisonResponse`: `analyses: list[AnalysisResponse]` (one per model)
 - Run each model's analysis concurrently with `asyncio.gather`
 - Return all results once all complete (no background task — this is a synchronous wait)
@@ -1039,7 +1043,7 @@
 **Scope**:
 - Two `<textarea>` fields: "Original Prompt" and "AI Response to Analyze"
 - Character count display for each (with warning color when approaching limits)
-- `<select>` for model: options `gpt-4o-mini`, `gpt-4o`, `claude-3-haiku`
+- `<select>` for model: options `gemini-3.1-flash-lite`
 - "Analyze" submit button — disabled and shows spinner while `isLoading`
 - Client-side validation: both fields required, response at least 50 chars
 - Inline validation error messages below each field
@@ -1319,7 +1323,7 @@
 ### Task 5.2 — Write full-pipeline integration test (happy path)
 **Complexity**: MEDIUM  
 **Files**: `backend/tests/test_integration.py`  
-**Explanation**: Submit a real analysis request end-to-end through the API (with mocked LLM/Tavily), poll until complete, and assert all fields are populated.
+**Explanation**: Submit a real analysis request end-to-end through the API (with mocked Gemini LLM/Tavily), poll until complete, and assert all fields are populated.
 
 **Scope**:
 - POST `/api/v1/analyze` with a sample prompt and response
@@ -1497,19 +1501,18 @@
 ### Task 7.2 — Create `docker-compose.yml` for local full-stack development
 **Complexity**: LOW  
 **Files**: `docker-compose.yml`  
-**Explanation**: A compose file that starts the FastAPI backend, a local ChromaDB instance, and the Next.js frontend together with a single command.
+**Explanation**: A compose file that starts the FastAPI backend and the Next.js frontend together with a single command. Chroma runs embedded via `PersistentClient` in the backend container.
 
 **Scope**:
 - `backend` service: builds from `backend/Dockerfile`, port 8000, env_file `.env`
 - `frontend` service: `node:20-alpine`, runs `npm run dev`, port 3000, depends on backend
-- `chroma` service: `chromadb/chroma:latest`, port 8001, volume for persistence
-- Health checks for all three services
+- Health checks for both services
 - `NEXT_PUBLIC_API_URL=http://backend:8000` env var in frontend service
 
 **Acceptance Criteria**:
-- `docker-compose up` starts all three services
+- `docker-compose up` starts both services
 - Frontend at `localhost:3000` can reach backend at `localhost:8000`
-- ChromaDB data persists across restarts
+- ChromaDB data persists across restarts via backend-mounted volume at `CHROMA_PERSIST_DIR`
 
 ---
 
@@ -1539,7 +1542,7 @@
 
 **Scope**:
 - Service type: `web`, environment: `python`, buildCommand: `pip install -r requirements.txt`, startCommand: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Environment variables: `OPENAI_API_KEY` (sync from Render secret), `TAVILY_API_KEY`, `DATABASE_URL`, `ENVIRONMENT=production`
+- Environment variables: `GEMINI_API_KEY` (sync from Render secret), `TAVILY_API_KEY`, `DATABASE_URL`, `ENVIRONMENT=production`
 - Health check path: `/`
 - Free tier instance type
 
@@ -1574,8 +1577,8 @@
 **Scope**:
 - `.env.example` with comments for every variable:
   ```
-  # OpenAI API key — get from https://platform.openai.com/api-keys
-  OPENAI_API_KEY=sk-...
+  # Gemini API key — get from Google AI Studio: https://aistudio.google.com/app/apikey
+  GEMINI_API_KEY=AIza...
   ```
 - README section "Environment Variables" table: Variable | Required | Default | Description
 - README section "Deployment" with step-by-step Render + Vercel instructions

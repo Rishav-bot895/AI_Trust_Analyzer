@@ -16,21 +16,21 @@ def _reload_config_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 
 def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
     monkeypatch.setenv("ALLOWED_ORIGINS", "[\"http://localhost:3000\", \"http://localhost:5173\"]")
 
     config = _reload_config_module(monkeypatch, tmp_path)
 
-    assert config.settings.OPENAI_API_KEY == "test-openai-key"
+    assert config.settings.GEMINI_API_KEY == "test-gemini-key"
     assert config.settings.TAVILY_API_KEY == "test-tavily-key"
     assert config.settings.DATABASE_URL == "sqlite+aiosqlite:///./dev.db"
     assert config.settings.ALLOWED_ORIGINS == ["http://localhost:3000", "http://localhost:5173"]
 
 
 def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
 
@@ -39,7 +39,7 @@ def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 
 def test_default_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
     monkeypatch.delenv("ENVIRONMENT", raising=False)
@@ -61,7 +61,7 @@ def test_env_example_contains_all_keys():
         keys.add(line.split("=", 1)[0].strip())
 
     expected = {
-        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
         "TAVILY_API_KEY",
         "DATABASE_URL",
         "CHROMA_PERSIST_DIR",

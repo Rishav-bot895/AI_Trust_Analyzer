@@ -39,7 +39,7 @@ class _FakeCollection:
 def _reload_vector_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Reload module with controlled env values and isolated import state."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test_task_1_10.db")
     monkeypatch.setenv("CHROMA_PERSIST_DIR", str(tmp_path / "chroma"))
