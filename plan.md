@@ -28,9 +28,9 @@ Update this section every time a task is completed.
 - [x] 2.1 Create agent base utilities and LLM factory
 - [x] 2.2 Implement Claim Extractor agent - LLM call and prompt
 - [x] 2.3 Implement Claim Extractor agent - output parsing and validation
-- [ ] 2.4 Implement Retriever agent - Tavily web search
-- [ ] 2.5 Implement Retriever agent - ChromaDB vector store queries
-- [ ] 2.6 Implement Retriever agent - deduplication and evidence ranking
+- [x] 2.4 Implement Retriever agent - Tavily web search
+- [x] 2.5 Implement Retriever agent - ChromaDB vector store queries
+- [x] 2.6 Implement Retriever agent - deduplication and evidence ranking
 - [ ] 2.7 Implement Verifier agent - claim vs evidence comparison
 - [ ] 2.8 Implement Verifier agent - per-claim confidence scoring
 - [ ] 2.9 Implement Critic agent - logical fallacy and quality analysis
@@ -391,6 +391,16 @@ Update this section every time a task is completed.
 - `test_router_prefix_applied`
 - `test_openapi_schema_includes_analyze`
 - `test_health_route_exists`
+
+---
+
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** I am in the repo root with `.env` configured, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --port 8000` and open `http://localhost:8000/docs`, **Then** I should see Swagger load with `/`, `/api/v1/health`, and placeholder analyze/compare routes.
+2. **Given** the backend is running on port 8000, **When** I run `curl -i http://localhost:8000/`, **Then** I should get `HTTP/1.1 200` and body `{"status":"ok"}`.
+3. **Given** CORS is configured for local frontend, **When** I run `curl -i -H "Origin: http://localhost:3000" http://localhost:8000/`, **Then** the response headers should include `access-control-allow-origin: http://localhost:3000`.
+4. **Given** I am in `backend/`, **When** I run `..\.venv\Scripts\python.exe -m alembic upgrade head` and then `..\.venv\Scripts\python.exe -m alembic downgrade base`, **Then** both commands should complete with exit code 0 and no migration exceptions.
+5. **Given** Chroma helper functions are available, **When** I run a short script that calls `add_documents(["Mars is the fourth planet"], [{"title":"fact"}], ["doc-1"])` and then `query_similar("Mars", 1)`, **Then** the query should return at least one item containing a non-empty `snippet`.
 
 ---
 
@@ -794,6 +804,16 @@ Update this section every time a task is completed.
 
 ---
 
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** Gemini and Tavily keys are set in `.env`, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_claim_extractor.py::test_extractor_extracts_claims -q`, **Then** the test should pass and confirm extracted claims include non-empty `text` and float `confidence`.
+2. **Given** retriever web/vector logic is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_retriever.py::test_retriever_merges_both_sources -q`, **Then** output evidence should include both `WEB_SEARCH` and `VECTOR_STORE` source types.
+3. **Given** retriever resilience is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_retriever.py::test_retriever_partial_failure_continues -q`, **Then** the test should pass showing one failing claim does not stop processing other claims.
+4. **Given** verifier verdict/polarity logic is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_verifier.py -q`, **Then** I should see tests pass for `SUPPORTED`, `PARTIALLY_SUPPORTED`, `CONTRADICTED`, and evidence polarity assignment.
+5. **Given** full agent workflow is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_workflow.py::test_workflow_timeline_has_five_entries -q`, **Then** the returned state timeline should contain five ordered events: extractor, retriever, verifier, critic, judge.
+
+---
+
 ## PHASE 3 — API Routes
 > Can start after Phase 1. Stubs are created in Task 1.11; these tasks fill in the implementations.
 
@@ -991,6 +1011,16 @@ Update this section every time a task is completed.
 - `test_get_analysis_unknown_returns_none`
 - `test_update_analysis_result_persists`
 - `test_get_claims_filter_works`
+
+---
+
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** backend is running locally, **When** I run `curl -i -X POST http://localhost:8000/api/v1/analyze -H "Content-Type: application/json" -d "{\"prompt\":\"Explain the Apollo program\",\"response\":\"Apollo 11 landed on the Moon in 1969 and returned safely.\",\"model_name\":\"gemini-3.1-flash-lite\"}"`, **Then** I should receive `HTTP/1.1 202` with JSON containing `id` and `status`=`PENDING`.
+2. **Given** I saved the returned analysis id, **When** I poll `curl -i http://localhost:8000/api/v1/analyze/<ANALYSIS_ID>` every 2-3 seconds, **Then** `status` should transition from `PENDING` or `RUNNING` to `COMPLETED` (or `FAILED` with `error`).
+3. **Given** status is `COMPLETED`, **When** I run `curl -i http://localhost:8000/api/v1/analyze/<ANALYSIS_ID>/claims?status=SUPPORTED`, **Then** every returned claim item should have `status`=`SUPPORTED`.
+4. **Given** status is `COMPLETED`, **When** I run `curl -i http://localhost:8000/api/v1/analyze/<ANALYSIS_ID>/evidence`, **Then** the returned list should be sorted by descending `relevance_score` and each row should include `claim_id`, `snippet`, and `source_type`.
+5. **Given** rate limiting is enabled on analyze POST, **When** I submit more than 30 requests in one minute from the same IP, **Then** at least one response should return `HTTP/1.1 429` and include a `Retry-After` header.
 
 ---
 
@@ -1377,6 +1407,16 @@ Update this section every time a task is completed.
 
 ---
 
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** I started frontend with `cd frontend && npm run dev`, **When** I open `http://localhost:3000`, **Then** I should see header branding, `Original Prompt` textarea, `AI Response to Analyze` textarea, model selector, and disabled Analyze button until both fields are valid.
+2. **Given** the page is open, **When** I paste prompt `Explain why the sky is blue` and a 50+ character response, **Then** character counters should update live and Analyze becomes enabled.
+3. **Given** I click Analyze once, **When** the request is in progress, **Then** the button should show loading state, remain disabled, and no duplicate request should fire on extra clicks.
+4. **Given** analysis data is returned, **When** the results section appears, **Then** TrustScoreCard should show numeric score, matching risk badge color (green >=80, yellow 50-79, red <50), and verdict text.
+5. **Given** claims, evidence, and timeline tabs are available, **When** I switch tabs, apply claim filters, and expand a claim row, **Then** tab hash should update (`#claims`/`#evidence`/`#timeline`), filtered rows should change, and timeline should display five connected nodes.
+
+---
+
 ## PHASE 5 — Integration & End-to-End Testing
 
 ---
@@ -1504,6 +1544,16 @@ Update this section every time a task is completed.
 
 ---
 
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** I am in repo root and using project venv, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_integration.py -q`, **Then** tests should run without requiring live Gemini/Tavily credentials.
+2. **Given** happy-path integration tests exist, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_integration.py::test_full_pipeline_happy_path -q`, **Then** the completed analysis payload should include `trust_score`, non-empty `claims`, non-empty `evidence`, `timeline` length 5, and non-empty `verdict`.
+3. **Given** validation-edge tests exist, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_integration.py::test_empty_prompt_returns_422 -q`, **Then** the assertion should confirm API returns 422 for empty prompt payloads.
+4. **Given** failure-path tests exist, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_integration.py::test_llm_rate_limit_sets_failed_status -q`, **Then** the assertion should confirm status becomes `FAILED` and includes a readable error.
+5. **Given** frontend unit tests are configured, **When** I run `cd frontend && npm test -- --run`, **Then** component suites for form, score card, claims table, and evidence panel should pass without real network calls.
+
+---
+
 ## PHASE 6 — Database & Storage
 
 ---
@@ -1549,6 +1599,16 @@ Update this section every time a task is completed.
 **Tests**:
 - `test_sqlite_url_uses_aiosqlite`
 - `test_postgres_url_uses_asyncpg`
+
+---
+
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** PostgreSQL 15 is running locally (or Supabase SQL editor is open), **When** I execute `backend/db/schema.sql`, **Then** `analyses`, `claims`, and `evidence` tables plus expected indexes should be created without SQL errors.
+2. **Given** those tables contain linked rows, **When** I run `DELETE FROM analyses WHERE id = '<ANALYSIS_UUID>';`, **Then** rows in `claims` and `evidence` tied to that analysis should be removed automatically by `ON DELETE CASCADE`.
+3. **Given** `.env` has `ENVIRONMENT=development` and `DATABASE_URL=sqlite+aiosqlite:///./dev.db`, **When** I start backend with uvicorn, **Then** startup should succeed without requiring PostgreSQL.
+4. **Given** `.env` has `ENVIRONMENT=production` and `DATABASE_URL=postgresql+asyncpg://...`, **When** I start backend and call `GET /api/v1/health`, **Then** the app should respond 200 while using PostgreSQL connection settings.
+5. **Given** I change only `ENVIRONMENT` and `DATABASE_URL` between development and production values, **When** I restart the service each time, **Then** the app should switch database backends with no source-code changes.
 
 ---
 
@@ -1669,6 +1729,16 @@ Update this section every time a task is completed.
 **Acceptance Criteria**:
 - Every variable in `Settings` class has a corresponding entry in `.env.example`
 - No real secrets committed to the repository
+
+---
+
+### User Testing Scenarios (Given/When/Then)
+
+1. **Given** `backend/Dockerfile` is ready, **When** I run `docker build -t ai-trust-backend ./backend` and `docker run --rm -p 8000:8000 ai-trust-backend`, **Then** `curl -i http://localhost:8000/` should return `HTTP/1.1 200` with `{"status":"ok"}`.
+2. **Given** `docker-compose.yml` is configured, **When** I run `docker compose up --build`, **Then** frontend should load at `http://localhost:3000` and backend health should respond at `http://localhost:8000/`.
+3. **Given** `.github/workflows/ci.yml` is committed on a feature branch, **When** I push that branch and open a PR, **Then** GitHub Actions should run both backend and frontend jobs and mark the check failed if either job fails.
+4. **Given** Render backend and Vercel frontend projects are connected to the repo, **When** I set required env vars and deploy both, **Then** opening the Vercel URL and submitting an analysis should reach the Render API successfully.
+5. **Given** `.env.example` and README env docs are complete, **When** a new developer clones the repo and follows only documented steps, **Then** they should be able to run backend, frontend, and tests without undocumented configuration.
 
 ---
 
