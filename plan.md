@@ -41,8 +41,8 @@ Update this section every time a task is completed.
 - [x] 2.4 Implement Retriever agent - Tavily web search
 - [x] 2.5 Implement Retriever agent - vector store queries (legacy ChromaDB implementation; superseded by correction tasks)
 - [x] 2.6 Implement Retriever agent - deduplication and evidence ranking
-- [ ] 2.7 Implement Verifier agent - claim vs evidence comparison
-- [ ] 2.8 Implement Verifier agent - per-claim confidence scoring
+- [x] 2.7 Implement Verifier agent - claim vs evidence comparison
+- [x] 2.8 Implement Verifier agent - per-claim confidence scoring
 - [ ] 2.9 Implement Critic agent - logical fallacy and quality analysis
 - [ ] 2.10 Implement Critic agent - output formatting and structured critique
 - [ ] 2.11 Implement Judge agent - trust score calculation
