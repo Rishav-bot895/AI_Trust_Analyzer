@@ -65,16 +65,16 @@ def test_evidence_none_url_allowed():
     """source_url may be None for vector store evidence."""
     data = _make_evidence_create_data()
     data["source_url"] = None
-    data["source_type"] = EvidenceSource.VECTOR_STORE
+    data["source_type"] = EvidenceSource.PGVECTOR
 
     evidence = EvidenceCreate(**data)
     assert evidence.source_url is None
-    assert evidence.source_type == EvidenceSource.VECTOR_STORE
+    assert evidence.source_type == EvidenceSource.PGVECTOR
 
 
 def test_evidence_source_enum():
     """EvidenceSource enum exposes expected values."""
-    assert {member.value for member in EvidenceSource} == {"WEB_SEARCH", "VECTOR_STORE"}
+    assert {member.value for member in EvidenceSource} == {"WEB_SEARCH", "PGVECTOR"}
 
 
 def test_evidence_polarity_enum():

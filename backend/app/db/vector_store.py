@@ -1,95 +1,224 @@
-"""ChromaDB client and helper functions for evidence vector retrieval."""
+"""PostgreSQL pgvector helpers for evidence vector retrieval."""
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+import json
+from typing import Any
 
-from chromadb import PersistentClient
-from chromadb.api.models.Collection import Collection
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+from sentence_transformers import SentenceTransformer
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 from app.core.config import settings
 
 
-class _EmbeddingCallable(Protocol):
-    """Protocol for Chroma embedding functions."""
-
-    def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002
-        """Return embeddings for the provided input texts."""
+_engine: Engine | None = None
+_embedder: SentenceTransformer | None = None
 
 
-class LocalChromaEmbeddingFunction:
-    """Adapter to use local sentence-transformers embeddings with ChromaDB."""
-
-    def __init__(self) -> None:
-        self._embeddings = SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2",
-        )
-
-    def __call__(self, input: list[str]) -> list[list[float]]:  # noqa: A002
-        return cast(list[list[float]], self._embeddings(input))
+def _sync_database_url() -> str:
+    """Convert async SQLAlchemy URL into a sync URL for SQL execution."""
+    url = settings.DATABASE_URL
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    return url
 
 
-_client: PersistentClient | None = None
-_collection: Collection | None = None
+def _get_engine() -> Engine:
+    """Create or return singleton SQLAlchemy sync engine."""
+    global _engine
+    if _engine is None:
+        _engine = create_engine(_sync_database_url(), future=True)
+    return _engine
 
 
-def _get_client() -> PersistentClient:
-    """Create or return the singleton persistent Chroma client."""
-    global _client
-    if _client is None:
-        _client = PersistentClient(path=settings.CHROMA_PERSIST_DIR)
-    return _client
+def _get_embedder() -> SentenceTransformer:
+    """Create or return singleton embedding model."""
+    global _embedder
+    if _embedder is None:
+        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedder
 
 
-def _create_collection() -> Collection:
-    """Create or return the evidence collection using local embeddings."""
-    client = _get_client()
-    embedding_function = cast(_EmbeddingCallable, LocalChromaEmbeddingFunction())
-    return client.get_or_create_collection(
-        name="evidence",
-        embedding_function=embedding_function,
-    )
+def _vector_literal(values: list[float]) -> str:
+    """Render vector values to pgvector literal format."""
+    return "[" + ",".join(f"{float(value):.8f}" for value in values) + "]"
 
 
-def get_collection() -> Collection:
-    """Return the lazily initialized evidence collection singleton."""
-    global _collection
-    if _collection is None:
-        _collection = _create_collection()
-    return _collection
+def _embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed text snippets using local sentence-transformers."""
+    if not texts:
+        return []
+
+    model = _get_embedder()
+    vectors = model.encode(texts, convert_to_numpy=False, normalize_embeddings=True)
+
+    normalized: list[list[float]] = []
+    for vector in vectors:
+        normalized.append([float(value) for value in vector])
+    return normalized
 
 
-def add_documents(texts: list[str], metadatas: list[dict[str, Any]], ids: list[str]) -> None:
-    """Add documents to the evidence collection."""
+def _validate_owner_scope(
+    *,
+    user_id: str | None,
+    guest_session_id: str | None,
+    is_guest: bool,
+) -> bool:
+    if is_guest:
+        return bool(guest_session_id) and not user_id
+    return bool(user_id) and not guest_session_id
+
+
+def add_documents(
+    texts: list[str],
+    metadatas: list[dict[str, Any]],
+    ids: list[str],
+    *,
+    user_id: str | None,
+    guest_session_id: str | None,
+    is_guest: bool,
+    evidence_ids: list[str] | None = None,
+) -> None:
+    """Add documents and their embeddings to the ownership-scoped pgvector table."""
     if not texts:
         return
 
-    collection = get_collection()
-    collection.add(documents=texts, metadatas=metadatas, ids=ids)
+    if len(texts) != len(ids):
+        raise ValueError("texts and ids must have the same length")
+
+    if metadatas and len(metadatas) != len(texts):
+        raise ValueError("metadatas must match texts length when provided")
+
+    if evidence_ids and len(evidence_ids) != len(texts):
+        raise ValueError("evidence_ids must match texts length when provided")
+
+    if not _validate_owner_scope(user_id=user_id, guest_session_id=guest_session_id, is_guest=is_guest):
+        raise ValueError("Vector documents must be stored with a valid owner scope")
+
+    metadata_rows = metadatas if metadatas else [{} for _ in texts]
+    resolved_evidence_ids = evidence_ids or [None for _ in texts]
+    vectors = _embed_texts(texts)
+
+    engine = _get_engine()
+    with engine.begin() as conn:
+        for idx, doc_id in enumerate(ids):
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO evidence_embeddings (
+                        id,
+                        evidence_id,
+                        snippet,
+                        metadata,
+                        user_id,
+                        guest_session_id,
+                        is_guest,
+                        embedding
+                    )
+                    VALUES (
+                        :id,
+                        :evidence_id,
+                        :snippet,
+                        CAST(:metadata AS jsonb),
+                        :user_id,
+                        :guest_session_id,
+                        :is_guest,
+                        CAST(:embedding AS vector)
+                    )
+                    ON CONFLICT (id) DO UPDATE
+                    SET evidence_id = EXCLUDED.evidence_id,
+                        user_id = EXCLUDED.user_id,
+                        guest_session_id = EXCLUDED.guest_session_id,
+                        is_guest = EXCLUDED.is_guest,
+                        snippet = EXCLUDED.snippet,
+                        metadata = EXCLUDED.metadata,
+                        embedding = EXCLUDED.embedding
+                    """
+                ),
+                {
+                    "id": doc_id,
+                    "evidence_id": resolved_evidence_ids[idx],
+                    "snippet": texts[idx],
+                    "metadata": json.dumps(metadata_rows[idx]),
+                    "user_id": user_id,
+                    "guest_session_id": guest_session_id,
+                    "is_guest": bool(is_guest),
+                    "embedding": _vector_literal(vectors[idx]),
+                },
+            )
 
 
-def query_similar(query_text: str, n_results: int = 5) -> list[dict[str, Any]]:
-    """Query semantically similar evidence snippets from ChromaDB."""
-    if not query_text.strip():
+def query_similar(
+    query_text: str,
+    n_results: int = 5,
+    *,
+    user_id: str | None,
+    guest_session_id: str | None,
+    is_guest: bool,
+) -> list[dict[str, Any]]:
+    """Query semantically similar evidence snippets from pgvector within owner scope."""
+    if not query_text.strip() or n_results <= 0:
         return []
 
-    collection = get_collection()
-    raw = collection.query(query_texts=[query_text], n_results=n_results)
+    if not _validate_owner_scope(user_id=user_id, guest_session_id=guest_session_id, is_guest=is_guest):
+        return []
 
-    ids = raw.get("ids", [[]])[0] or []
-    documents = raw.get("documents", [[]])[0] or []
-    metadatas = raw.get("metadatas", [[]])[0] or []
-    distances = raw.get("distances", [[]])[0] or []
+    query_vector = _embed_texts([query_text])[0]
+    engine = _get_engine()
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    evidence_id,
+                    snippet,
+                    metadata,
+                    (embedding <=> CAST(:query_embedding AS vector)) AS distance
+                FROM evidence_embeddings
+                WHERE is_guest = :is_guest
+                  AND (
+                        (:is_guest = TRUE AND guest_session_id = :guest_session_id)
+                        OR
+                        (:is_guest = FALSE AND user_id = :user_id)
+                  )
+                ORDER BY embedding <=> CAST(:query_embedding AS vector)
+                LIMIT :n_results
+                """
+            ),
+            {
+                "query_embedding": _vector_literal(query_vector),
+                "n_results": int(n_results),
+                "is_guest": bool(is_guest),
+                "user_id": user_id,
+                "guest_session_id": guest_session_id,
+            },
+        ).mappings().all()
 
     results: list[dict[str, Any]] = []
-    for index, doc_id in enumerate(ids):
+    for row in rows:
+        metadata = row.get("metadata")
+        if metadata is None:
+            parsed_metadata: dict[str, Any] = {}
+        elif isinstance(metadata, dict):
+            parsed_metadata = metadata
+        elif isinstance(metadata, str):
+            try:
+                parsed_metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                parsed_metadata = {}
+        else:
+            parsed_metadata = dict(metadata)
+
         results.append(
             {
-                "id": doc_id,
-                "snippet": documents[index] if index < len(documents) else "",
-                "metadata": metadatas[index] if index < len(metadatas) else {},
-                "distance": distances[index] if index < len(distances) else None,
+                "id": row.get("id"),
+                "evidence_id": row.get("evidence_id"),
+                "snippet": row.get("snippet") or "",
+                "metadata": parsed_metadata,
+                "distance": row.get("distance"),
             }
         )
 

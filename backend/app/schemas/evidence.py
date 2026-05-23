@@ -13,8 +13,8 @@ class EvidenceSource(str, Enum):
     WEB_SEARCH = "WEB_SEARCH"
     """Evidence retrieved from web search providers."""
 
-    VECTOR_STORE = "VECTOR_STORE"
-    """Evidence retrieved from vector similarity search."""
+    PGVECTOR = "PGVECTOR"
+    """Evidence retrieved from pgvector similarity search."""
 
 
 class EvidencePolarity(str, Enum):
@@ -38,9 +38,9 @@ class EvidenceCreate(BaseModel):
 
     source_url: AnyHttpUrl | None = Field(
         default=None,
-        description="Source URL when available; may be null for vector store entries",
+        description="Source URL when available; may be null for pgvector entries",
     )
-    """Source URL when available; may be null for vector store entries."""
+    """Source URL when available; may be null for pgvector entries."""
 
     source_title: str | None = Field(default=None, description="Optional source title")
     """Optional source title for display in the UI."""
@@ -49,7 +49,7 @@ class EvidenceCreate(BaseModel):
     """Relevance score from retrieval, typically in the range 0 to 1."""
 
     source_type: EvidenceSource = Field(..., description="Origin of this evidence")
-    """Origin of this evidence: web search or vector store."""
+    """Origin of this evidence: web search or pgvector."""
 
     polarity: EvidencePolarity | None = Field(
         default=None,

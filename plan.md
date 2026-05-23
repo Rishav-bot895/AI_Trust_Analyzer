@@ -1,9 +1,19 @@
 # AI Trust Analyzer — Implementation Plan
 
 **Project state**: Phase 1 backend foundation is complete and tested. Phase 2 is in progress (Tasks 2.1-2.3 complete). Treat this document as the execution plan for remaining work.
+**Architecture update (mandatory)**: Legacy ChromaDB assumptions are replaced by PostgreSQL + pgvector hosted on Supabase free tier. The product must support two user modes: authenticated users (persistent history) and guest users (ephemeral data deleted when session closes or expires).
 
 **Goal**: Build a full-stack factuality-risk analysis tool. User pastes an AI-generated response, five LangGraph agents (Extractor → Retriever → Verifier → Critic → Judge) analyze it, and a React UI displays trust scores, claim-by-claim verdicts, evidence citations, and an agent execution timeline.
 This is decision-support, not definitive hallucination detection; outputs must include transparent confidence labeling and evidence provenance.
+
+**Cross-cutting requirements (apply to all phases/tasks):**
+- Vector storage and similarity search must use Supabase PostgreSQL with pgvector only (no ChromaDB runtime dependency).
+- All analysis data must be ownership-scoped:
+  - Authenticated mode: persist analysis, claims, evidence, and timeline under the authenticated user and expose history endpoints/UI.
+  - Guest mode: isolate data by guest session, do not expose cross-session history, and delete guest data after browser session close and TTL-based backend cleanup.
+- API and frontend must carry user mode context on every analyze, poll, claims, evidence, timeline, and compare interaction.
+- API response/request naming contract must be explicit and uniform end-to-end. Use one canonical wire format (snake_case or camelCase) and enforce deterministic transformations/tests at API boundaries.
+- Supabase authentication validation must be production-safe: verify token signature and claims using Supabase-compatible verification strategy (JWKS/asymmetric support), not only shared-secret HS256 assumptions.
 
 ---
 
@@ -21,7 +31,7 @@ Update this section every time a task is completed.
 - [x] 1.7 Create Pydantic schema for AgentState (LangGraph state)
 - [x] 1.8 Set up SQLAlchemy database models and session management
 - [x] 1.9 Create Alembic migration for initial database schema
-- [x] 1.10 Set up ChromaDB client and vector collection initialization
+- [x] 1.10 Set up vector store initialization (legacy ChromaDB implementation; superseded by correction tasks)
 - [x] 1.11 Wire up the API router in router.py and mount to main.py
 
 ### Phase 2 - Agent Implementation
@@ -29,7 +39,7 @@ Update this section every time a task is completed.
 - [x] 2.2 Implement Claim Extractor agent - LLM call and prompt
 - [x] 2.3 Implement Claim Extractor agent - output parsing and validation
 - [x] 2.4 Implement Retriever agent - Tavily web search
-- [x] 2.5 Implement Retriever agent - ChromaDB vector store queries
+- [x] 2.5 Implement Retriever agent - vector store queries (legacy ChromaDB implementation; superseded by correction tasks)
 - [x] 2.6 Implement Retriever agent - deduplication and evidence ranking
 - [ ] 2.7 Implement Verifier agent - claim vs evidence comparison
 - [ ] 2.8 Implement Verifier agent - per-claim confidence scoring
@@ -78,7 +88,7 @@ Update this section every time a task is completed.
 
 ### Phase 6 - Database and Storage
 - [ ] 6.1 Write production database schema SQL for Supabase
-- [ ] 6.2 Configure Supabase connection and swap SQLite for PostgreSQL in production
+- [ ] 6.2 Configure Supabase connection for development and production
 
 ### Phase 7 - Deployment and CI/CD
 - [ ] 7.1 Create Dockerfile for the FastAPI backend
@@ -92,7 +102,7 @@ Update this section every time a task is completed.
 
 ## Execution Strategy
 
-**Critical path**: (Phase 1 complete) → Phases 2 + 3 + 4 + 6 in parallel → Phase 5 → Phase 7
+**Critical path**: (Phase 1 complete) → Corrections for completed legacy tasks → Phases 2 + 3 + 4 + 6 in parallel → Phase 5 → Phase 7
 
 | Phase | Focus | Can start after |
 |-------|-------|-----------------|
@@ -148,14 +158,14 @@ Update this section every time a task is completed.
 
 **Scope**:
 - Install `pydantic-settings` (add to `requirements.txt`)
-- `Settings` class fields: `GEMINI_API_KEY: str`, `TAVILY_API_KEY: str`, `DATABASE_URL: str`, `CHROMA_PERSIST_DIR: str = "./data/chroma"`, `ENVIRONMENT: str = "development"`, `ALLOWED_ORIGINS: list[str]`, `LOG_LEVEL: str = "INFO"`, `MAX_CLAIMS: int = 50`
+- `Settings` class fields: `GEMINI_API_KEY: str`, `TAVILY_API_KEY: str`, `DATABASE_URL: str` (Supabase PostgreSQL URL), `SUPABASE_URL: str`, `SUPABASE_ANON_KEY: str`, `SUPABASE_SERVICE_ROLE_KEY: str`, `SUPABASE_JWT_SECRET: str`, `ENVIRONMENT: str = "development"`, `ALLOWED_ORIGINS: list[str]`, `LOG_LEVEL: str = "INFO"`, `MAX_CLAIMS: int = 50`, `VECTOR_EMBEDDING_DIM: int = 384`, `GUEST_SESSION_TTL_HOURS: int = 24`
 - `model_config = SettingsConfig(env_file=".env", env_file_encoding="utf-8")`
 - Expose a module-level `settings = Settings()` singleton
-- Validate that `GEMINI_API_KEY` is non-empty string
+- Validate that `GEMINI_API_KEY`, `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_JWT_SECRET` are non-empty strings
 
 **Acceptance Criteria**:
 - `from app.core.config import settings` works without errors
-- Missing `GEMINI_API_KEY` raises `ValidationError` at import time
+- Missing required API or Supabase settings raise `ValidationError` at import time
 - `.env.example` lists every required variable with placeholder values
 
 **Tests**:
@@ -169,23 +179,25 @@ Update this section every time a task is completed.
 ### Task 1.3 — Add all missing packages to `requirements.txt`
 **Complexity**: LOW  
 **Files**: `requirements.txt`  
-**Explanation**: The current file is missing LangGraph, LangChain, Gemini integration, Tavily retrieval tooling, ChromaDB, SQLAlchemy, Alembic, pydantic-settings, and test tooling. Add exact pinned versions.
+**Explanation**: The current file is missing LangGraph, LangChain, Gemini integration, Tavily retrieval tooling, pgvector/PostgreSQL support, SQLAlchemy, Alembic, pydantic-settings, and test tooling. Add exact pinned versions.
 
 **Scope**:
 - Add: `langgraph>=0.2`, `langchain>=0.2`, `langchain-google-genai>=2.0`, `langchain-community>=0.2`
 - Add: `tavily-python>=0.3`
-- Add: `chromadb>=0.5`
+- Add: `pgvector>=0.2`
+- Add: `psycopg[binary]>=3.2`
 - Add: `sentence-transformers>=3.0`
 - Add: `sqlalchemy>=2.0`, `alembic>=1.13`
 - Add: `pydantic-settings>=2.0`
 - Add: `asyncpg>=0.30` (async PostgreSQL driver)
+- Add: `supabase>=2.0` (Supabase auth/session integration)
 - Add: `slowapi>=0.1.9` (API rate limiting)
 - Add test dependencies: `pytest>=8.0`, `pytest-asyncio>=0.23`, `httpx>=0.27` (for TestClient), `pytest-cov>=5.0`
 - Run `pip install -r requirements.txt` to validate all packages resolve without conflicts
 
 **Acceptance Criteria**:
 - `pip install -r requirements.txt` completes without errors
-- `import langgraph`, `import chromadb`, `import langchain_google_genai`, `import tavily` all succeed
+- `import langgraph`, `import pgvector`, `import langchain_google_genai`, `import tavily`, and `import supabase` all succeed
 - No version conflicts reported by pip
 
 **Tests**:
@@ -230,7 +242,7 @@ Update this section every time a task is completed.
 **Explanation**: Define the shape for a retrieved evidence piece, including its source URL, snippet text, relevance score, and polarity (whether it supports or contradicts the claim). Evidence polarity is determined by the Verifier agent when comparing evidence against claims.
 
 **Scope**:
-- `EvidenceSource` enum: `WEB_SEARCH`, `VECTOR_STORE`
+- `EvidenceSource` enum: `WEB_SEARCH`, `PGVECTOR`
 - `EvidencePolarity` enum: `FOR`, `AGAINST`
   - `FOR`: Evidence supports the claim
   - `AGAINST`: Evidence contradicts the claim
@@ -242,7 +254,7 @@ Update this section every time a task is completed.
 **Acceptance Criteria**:
 - `Evidence(**data)` validates with all fields
 - Invalid URL raises `ValidationError`
-- `source_url: None` is allowed (vector store sources may lack URLs)
+- `source_url: None` is allowed (pgvector-only internal sources may lack URLs)
 - `polarity: None` is allowed initially (evidence retrieved before verification)
 - Polarity can be set to `FOR` or `AGAINST` after verification
 
@@ -305,17 +317,18 @@ Update this section every time a task is completed.
 **Explanation**: Create SQLAlchemy ORM models for persisting analyses, claims, and evidence, plus the async session factory.
 
 **Scope**:
-- `Analysis` ORM model: maps to `analyses` table with all `AnalysisResponse` fields
+- `Analysis` ORM model: maps to `analyses` table with all `AnalysisResponse` fields plus ownership columns (`user_id` nullable, `guest_session_id` nullable, `is_guest` boolean)
 - `Claim` ORM model: maps to `claims` table with foreign key to `analyses.id`
 - `Evidence` ORM model: maps to `evidence` table with foreign key to `claims.id`
-- `engine = create_async_engine(settings.DATABASE_URL)` using `aiosqlite` for dev (SQLite) or `asyncpg` for production
+- Add `ChatSession` ORM model to track per-user and per-guest conversation/session boundaries
+- `engine = create_async_engine(settings.DATABASE_URL)` using `asyncpg` against Supabase PostgreSQL
 - `AsyncSessionLocal` session factory
 - `get_db()` async generator for FastAPI dependency injection
 
 **Acceptance Criteria**:
 - `alembic revision --autogenerate` detects the models and generates a migration
 - `get_db()` yields a working session and closes it on completion
-- SQLite works in development without any extra configuration
+- Supabase PostgreSQL connection works in development and production environments
 
 **Tests**:
 - `test_analysis_model_table_name`
@@ -328,18 +341,19 @@ Update this section every time a task is completed.
 ### Task 1.9 — Create Alembic migration for initial database schema
 **Complexity**: LOW  
 **Files**: `backend/alembic.ini`, `backend/alembic/env.py`, `backend/alembic/versions/001_initial.py`  
-**Explanation**: Initialize Alembic and generate the first migration that creates the `analyses`, `claims`, and `evidence` tables.
+**Explanation**: Initialize Alembic and generate the first migration that creates the `analyses`, `claims`, `evidence`, and `chat_sessions` tables, and enables pgvector.
 
 **Scope**:
 - Run `alembic init alembic` inside `backend/`
 - Configure `env.py` to import ORM models and use `settings.DATABASE_URL`
 - Generate initial migration with `alembic revision --autogenerate -m "initial"`
-- Verify migration creates all three tables with correct columns and foreign keys
+- Add SQL for `CREATE EXTENSION IF NOT EXISTS vector`
+- Verify migration creates all required tables with ownership columns and foreign keys
 
 **Acceptance Criteria**:
-- `alembic upgrade head` runs without errors on a fresh SQLite database
+- `alembic upgrade head` runs without errors on a fresh PostgreSQL/Supabase database
 - `alembic downgrade base` successfully reverses all changes
-- All three tables and their columns exist after upgrade
+- All required tables, ownership columns, and pgvector extension exist after upgrade
 
 **Tests**:
 - `test_migration_upgrade_creates_tables`
@@ -347,22 +361,22 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 1.10 — Set up ChromaDB client and vector collection initialization
+### Task 1.10 — Set up pgvector client utilities and vector index initialization
 **Complexity**: LOW  
-**Files**: `backend/app/db/vector_store.py`  
-**Explanation**: Create a ChromaDB client singleton and helper functions for initializing the evidence collection, adding documents, and querying by similarity.
+**Files**: `backend/app/db/vector_store.py`
+**Explanation**: Create pgvector helper utilities for inserting evidence embeddings and querying by similarity in Supabase PostgreSQL.
 
 **Scope**:
-- `PersistentClient(path=settings.CHROMA_PERSIST_DIR)` creation
-- `get_or_create_collection("evidence", embedding_function=...)` using free local embeddings (`sentence-transformers`)
+- Create `evidence_embeddings` table helpers with `embedding vector(VECTOR_EMBEDDING_DIM)`
+- Build embeddings using `sentence-transformers` and persist vectors with SQLAlchemy/pgvector
 - `add_documents(texts: list[str], metadatas: list[dict], ids: list[str])` function
-- `query_similar(query_text: str, n_results: int = 5) -> list[dict]` function
-- Lazy initialization — client created on first use, not at import time
+- `query_similar(query_text: str, n_results: int = 5) -> list[dict]` function using cosine distance `<=>`
+- Ensure tenant-safe query filters by `user_id` or `guest_session_id`
 
 **Acceptance Criteria**:
-- `add_documents(...)` adds entries to ChromaDB without error
+- `add_documents(...)` adds entries to PostgreSQL pgvector without error
 - `query_similar("test query")` returns a list of result dicts
-- ChromaDB data persists across restarts in `CHROMA_PERSIST_DIR`
+- Supabase pgvector data persists across restarts
 
 **Tests**:
 - `test_collection_created_on_first_use`
@@ -400,7 +414,7 @@ Update this section every time a task is completed.
 2. **Given** the backend is running on port 8000, **When** I run `curl -i http://localhost:8000/`, **Then** I should get `HTTP/1.1 200` and body `{"status":"ok"}`.
 3. **Given** CORS is configured for local frontend, **When** I run `curl -i -H "Origin: http://localhost:3000" http://localhost:8000/`, **Then** the response headers should include `access-control-allow-origin: http://localhost:3000`.
 4. **Given** I am in `backend/`, **When** I run `..\.venv\Scripts\python.exe -m alembic upgrade head` and then `..\.venv\Scripts\python.exe -m alembic downgrade base`, **Then** both commands should complete with exit code 0 and no migration exceptions.
-5. **Given** Chroma helper functions are available, **When** I run a short script that calls `add_documents(["Mars is the fourth planet"], [{"title":"fact"}], ["doc-1"])` and then `query_similar("Mars", 1)`, **Then** the query should return at least one item containing a non-empty `snippet`.
+5. **Given** pgvector helper functions are available, **When** I run a short script that calls `add_documents(["Mars is the fourth planet"], [{"title":"fact"}], ["doc-1"])` and then `query_similar("Mars", 1)`, **Then** the query should return at least one item containing a non-empty `snippet`.
 
 ---
 
@@ -508,26 +522,28 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 2.5 — Implement Retriever agent — ChromaDB vector store queries
+### Task 2.5 — Implement Retriever agent — pgvector similarity queries
 **Complexity**: MEDIUM  
 **Files**: `backend/app/agents/retriever.py`  
-**Explanation**: Supplement Tavily results by querying the local ChromaDB vector store for each claim, retrieving semantically similar stored evidence.
+**Explanation**: Supplement Tavily results by querying Supabase pgvector for each claim, retrieving semantically similar stored evidence.
 
 **Scope**:
 - Import `query_similar` from `app.db.vector_store`
 - For each claim, run `query_similar(claim["text"], n_results=3)`
-- Map ChromaDB results to `EvidenceCreate` dicts with `"source_type": "VECTOR_STORE"`
+- Map pgvector results to `EvidenceCreate` dicts with `"source_type": "PGVECTOR"`
 - Merge with Tavily results already in `state["evidence"]`
 
 **Acceptance Criteria**:
 - Vector store evidence is added alongside web search evidence
-- If ChromaDB is empty, returns no error (empty list merged cleanly)
+- If pgvector index is empty, returns no error (empty list merged cleanly)
 - Each vector store result has `source_url: None`
+- If Tavily fails for a claim, pgvector retrieval still executes for that same claim
 
 **Tests**:
 - `test_retriever_queries_vector_store` (mock `query_similar`)
 - `test_retriever_empty_vector_store_ok`
 - `test_retriever_merges_both_sources`
+- `test_retriever_tavily_failure_still_queries_vector_for_claim`
 
 ---
 
@@ -807,7 +823,7 @@ Update this section every time a task is completed.
 ### User Testing Scenarios (Given/When/Then)
 
 1. **Given** Gemini and Tavily keys are set in `.env`, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_claim_extractor.py::test_extractor_extracts_claims -q`, **Then** the test should pass and confirm extracted claims include non-empty `text` and float `confidence`.
-2. **Given** retriever web/vector logic is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_retriever.py::test_retriever_merges_both_sources -q`, **Then** output evidence should include both `WEB_SEARCH` and `VECTOR_STORE` source types.
+2. **Given** retriever web/vector logic is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_retriever.py::test_retriever_merges_both_sources -q`, **Then** output evidence should include both `WEB_SEARCH` and `PGVECTOR` source types.
 3. **Given** retriever resilience is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_retriever.py::test_retriever_partial_failure_continues -q`, **Then** the test should pass showing one failing claim does not stop processing other claims.
 4. **Given** verifier verdict/polarity logic is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_verifier.py -q`, **Then** I should see tests pass for `SUPPORTED`, `PARTIALLY_SUPPORTED`, `CONTRADICTED`, and evidence polarity assignment.
 5. **Given** full agent workflow is implemented, **When** I run `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend\tests\test_workflow.py::test_workflow_timeline_has_five_entries -q`, **Then** the returned state timeline should contain five ordered events: extractor, retriever, verifier, critic, judge.
@@ -827,6 +843,9 @@ Update this section every time a task is completed.
 **Scope**:
 - Create `analysis_router = APIRouter(prefix="/analyze", tags=["analysis"])`
 - `POST /` handler: validate `AnalysisRequest`, create `Analysis` ORM record with `status=PENDING`, return `{"id": analysis_id, "status": "PENDING"}` immediately
+- Resolve requester context from JWT/session:
+  - authenticated user: attach `user_id`
+  - guest user: create/use `guest_session_id` cookie/token and mark `is_guest=true`
 - Launch `BackgroundTask` calling `run_analysis(...)` and updating the DB record
 - On background task completion: update DB with all results and `status=COMPLETED`
 - On background task error: set `status=FAILED`, `error=str(exc)`
@@ -852,6 +871,7 @@ Update this section every time a task is completed.
 
 **Scope**:
 - `GET /{analysis_id}` handler: query DB for `Analysis` by UUID
+- Enforce ownership check: authenticated user can only access own records; guest can only access records within current guest session
 - If not found: raise `HTTPException(404)`
 - If `PENDING` or `RUNNING`: return `AnalysisResponse` with null result fields
 - If `COMPLETED`: return full `AnalysisResponse` with all nested claims/evidence
@@ -877,6 +897,7 @@ Update this section every time a task is completed.
 
 **Scope**:
 - `GET /{analysis_id}/claims` with optional `?status=SUPPORTED` query param
+- Enforce ownership/session scope before returning claim data
 - Query `claims` table filtered by `analysis_id`
 - If `status` param provided, filter by `ClaimStatus`
 - Return `list[Claim]`
@@ -903,6 +924,7 @@ Update this section every time a task is completed.
 **Scope**:
 - `GET /{analysis_id}/evidence` with optional `?claim_id=UUID` query param
 - Join `evidence` → `claims` → `analysis_id` for security (can't query evidence from another user's analysis)
+- Enforce authenticated ownership or guest-session ownership for every query path
 - Return `list[Evidence]` sorted by `relevance_score` descending
 
 **Acceptance Criteria**:
@@ -925,6 +947,7 @@ Update this section every time a task is completed.
 **Scope**:
 - `GET /{analysis_id}/timeline`
 - Retrieve `timeline` JSON field from the `Analysis` ORM record
+- Enforce authenticated ownership or guest-session ownership
 - Return `list[TimelineEvent]` in execution order
 - If analysis is still PENDING/RUNNING, return partial timeline
 
@@ -993,13 +1016,17 @@ Update this section every time a task is completed.
 
 **Scope**:
 - `create_analysis(db: AsyncSession, request: AnalysisRequest) -> Analysis`
+- `create_analysis(db: AsyncSession, request: AnalysisRequest, user_id: UUID | None, guest_session_id: str | None) -> Analysis`
 - `get_analysis(db: AsyncSession, analysis_id: UUID) -> Analysis | None`
+- `get_analysis_for_requester(db: AsyncSession, analysis_id: UUID, user_id: UUID | None, guest_session_id: str | None) -> Analysis | None`
 - `update_analysis_result(db: AsyncSession, analysis_id: UUID, state: AgentState) -> Analysis`
 - `update_analysis_status(db: AsyncSession, analysis_id: UUID, status: AnalysisStatus) -> None`
 - `create_claims(db: AsyncSession, analysis_id: UUID, claims: list[dict]) -> list[Claim]`
 - `create_evidence(db: AsyncSession, claims: list[Claim], evidence: list[dict]) -> list[Evidence]`
 - `get_claims(db: AsyncSession, analysis_id: UUID, status: ClaimStatus | None) -> list[Claim]`
 - `get_evidence(db: AsyncSession, analysis_id: UUID, claim_id: UUID | None) -> list[Evidence]`
+- `delete_guest_session_data(db: AsyncSession, guest_session_id: str) -> None`
+- Persist and read `timeline` as structured JSON (not opaque text blobs), with repository methods responsible for serialization/deserialization boundaries
 
 **Acceptance Criteria**:
 - All route handlers use repository functions, no raw ORM in routes
@@ -1080,13 +1107,15 @@ Update this section every time a task is completed.
 
 **Scope**:
 - `ClaimStatus = "SUPPORTED" | "CONTRADICTED" | "UNSUPPORTED" | "UNVERIFIABLE"`
-- `EvidenceSource = "WEB_SEARCH" | "VECTOR_STORE"`
+- `EvidenceSource = "WEB_SEARCH" | "PGVECTOR"`
 - `AnalysisStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED"`
 - `HallucinationRisk = "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN"`
+- `UserMode = "AUTHENTICATED" | "GUEST"`
 - `interface Claim { id: string; text: string; confidence: number; status: ClaimStatus; ... }`
 - `interface Evidence { id: string; claimId: string; snippet: string; sourceUrl: string | null; ... }`
 - `interface AnalysisResponse { id: string; status: AnalysisStatus; trustScore: number | null; claims: Claim[]; evidence: Evidence[]; ... }`
 - `interface AnalysisRequest { prompt: string; response: string; modelName?: string; }`
+- `interface AnalysisRequest { prompt: string; response: string; modelName?: string; userMode: UserMode; guestSessionId?: string; }`
 - `interface TimelineEvent { agent: string; startedAt: string; completedAt: string; inputSummary: string; outputSummary: string; }`
 
 **Acceptance Criteria**:
@@ -1108,6 +1137,11 @@ Update this section every time a task is completed.
 - `async function apiPost<T>(path: string, body: unknown): Promise<T>`
 - `async function apiGet<T>(path: string): Promise<T>`
 - Both functions: set `Content-Type: application/json`, throw `ApiError` on non-2xx status
+- Include auth/session propagation:
+  - send bearer token when logged in
+  - send guest session header or cookie when in guest mode
+- Enforce auth/session propagation for **every** exported API function (`submitAnalysis`, `getAnalysis`, `getClaims`, `getEvidence`, `getTimeline`, `compareModels`)
+- Add a single normalization layer that converts canonical backend field casing to frontend field casing for all endpoints (not history-only special casing)
 - `class ApiError extends Error { status: number; detail: string }`
 - Exported functions: `submitAnalysis(req: AnalysisRequest): Promise<{id: string}>`, `getAnalysis(id: string): Promise<AnalysisResponse>`, `getClaims(id: string, status?: ClaimStatus): Promise<Claim[]>`, `getEvidence(id: string, claimId?: string): Promise<Evidence[]>`, `getTimeline(id: string): Promise<TimelineEvent[]>`, `compareModels(req: ComparisonRequest): Promise<ComparisonResponse>`
 
@@ -1120,6 +1154,8 @@ Update this section every time a task is completed.
 - `test_submit_analysis_sends_correct_request` (mock fetch)
 - `test_api_error_thrown_on_404`
 - `test_get_analysis_returns_typed_response`
+- `test_all_client_calls_include_owner_context_headers`
+- `test_analysis_claims_evidence_timeline_are_case_normalized`
 
 ---
 
@@ -1131,8 +1167,10 @@ Update this section every time a task is completed.
 **Scope**:
 - `usePolling(id: string | null, intervalMs: number)`: polls `getAnalysis(id)` every `intervalMs` ms, stops when status is `COMPLETED` or `FAILED`
 - `useAnalysis()`: returns `{ submit, analysis, status, error, isLoading }`, calls `submitAnalysis`, then starts polling
+- `useAnalysis()` must respect user mode and include `guestSessionId` for guest calls
 - Handle cleanup: clear interval on unmount
 - Expose `reset()` function to clear state
+- On guest browser session end, trigger best-effort guest cleanup endpoint
 
 **Acceptance Criteria**:
 - `submit(request)` sets `isLoading: true` immediately
@@ -1246,7 +1284,7 @@ Update this section every time a task is completed.
 - Evidence grouped correctly under their parent claim
 - URL links have `target="_blank" rel="noopener noreferrer"`
 - "Show more" expands full snippet text
-- VECTOR_STORE items do not render broken null URL
+- PGVECTOR items do not render broken null URL
 
 **Tests**:
 - `test_evidence_grouped_by_claim`
@@ -1314,11 +1352,12 @@ Update this section every time a task is completed.
 **Explanation**: A tab bar allowing users to switch between Claims, Evidence, Agent Timeline, and Model Comparison views in the results panel.
 
 **Scope**:
-- Tabs: `Claims` (with badge count), `Evidence` (with count), `Timeline`, `Compare`
+- Tabs: `Claims` (with badge count), `Evidence` (with count), `Timeline`, `Compare`, `History`
 - Active tab highlighted with bottom border and bold text
 - URL hash sync: `#claims`, `#evidence`, `#timeline`, `#compare`
 - Keyboard navigation: arrow keys move between tabs
 - Disabled state for "Compare" when no comparison data loaded
+- `History` tab is visible only for authenticated users
 
 **Acceptance Criteria**:
 - Clicking tab changes active content
@@ -1343,6 +1382,7 @@ Update this section every time a task is completed.
 - `ResultsView` accepts `analysis: AnalysisResponse` prop
 - Top section: `TrustScoreCard` + critique markdown display
 - Tab content: `ClaimsTable`, `EvidencePanel`, `AgentTimeline`, `ModelComparisonTable`
+- Add authenticated-only history panel showing previous analyses and claim summaries
 - Use `react-markdown` to render the critique field
 - Loading skeleton for whole component when `analysis.status !== "COMPLETED"`
 
@@ -1369,6 +1409,7 @@ Update this section every time a task is completed.
 - Render `AnalysisInputForm` in top half with `onSubmit={submit}` and `isLoading`
 - Conditionally render `ResultsView` below when `analysis` is available
 - Add a site header with the product name and a subtle logo
+- Add user mode controls: authenticated identity badge or guest mode badge
 - Add a footer with GitHub link
 
 **Acceptance Criteria**:
@@ -1424,13 +1465,14 @@ Update this section every time a task is completed.
 ### Task 5.1 — Set up pytest fixtures and test database
 **Complexity**: LOW  
 **Files**: `backend/tests/conftest.py`  
-**Explanation**: Configure pytest with shared fixtures: a TestClient, an in-memory SQLite test database, and LLM mocks to prevent real API calls during tests.
+**Explanation**: Configure pytest with shared fixtures: a TestClient, a PostgreSQL test database with pgvector extension, and LLM mocks to prevent real API calls during tests.
 
 **Scope**:
 - `@pytest.fixture async def async_client()` using `httpx.AsyncClient` with `ASGITransport`
-- `@pytest.fixture` for in-memory SQLite DB (overrides `settings.DATABASE_URL`)
+- `@pytest.fixture` for PostgreSQL test schema with `CREATE EXTENSION IF NOT EXISTS vector` (overrides `settings.DATABASE_URL`)
 - `@pytest.fixture` for mock LLM (returns canned responses via `unittest.mock.patch`)
 - `@pytest.fixture` for mock Tavily client
+- `@pytest.fixture` for authenticated JWT and guest session identifiers
 - `pytest.ini` or `pyproject.toml` section: `asyncio_mode = "auto"`, coverage settings
 
 **Acceptance Criteria**:
@@ -1480,6 +1522,11 @@ Update this section every time a task is completed.
 - Test: Tavily returns 0 results → analysis completes but evidence list is empty
 - Test: unknown analysis ID → HTTP 404
 - Test: `trust_score` in completed analysis is between 0 and 100
+- Test: authenticated user cannot access another authenticated user's analysis
+- Test: guest user cannot access another guest session's analysis
+- Test: guest session cleanup deletes claims/evidence/history for that session
+- Test: contract consistency for analysis payload fields (chosen canonical casing) across analyze/poll/claims/evidence/timeline
+- Test: Supabase-style JWT validation rejects invalid issuer/audience/signature combinations and accepts valid tokens
 
 **Tests**:
 - `test_empty_prompt_returns_422`
@@ -1561,18 +1608,24 @@ Update this section every time a task is completed.
 ### Task 6.1 — Write production database schema SQL for Supabase
 **Complexity**: LOW  
 **Files**: `backend/db/schema.sql`  
-**Explanation**: Write the raw SQL schema for PostgreSQL/Supabase that matches the SQLAlchemy ORM models, including indexes and constraints.
+**Explanation**: Write the raw SQL schema for PostgreSQL/Supabase that matches the SQLAlchemy ORM models, including pgvector, indexes, constraints, ownership fields, and retention metadata.
 
 **Scope**:
 - `CREATE TABLE analyses (id UUID PRIMARY KEY, status VARCHAR, trust_score FLOAT, ...)` with all columns
+- `CREATE EXTENSION IF NOT EXISTS vector`
+- `CREATE TABLE chat_sessions (...)` for authenticated and guest session tracking
 - `CREATE TABLE claims (id UUID PRIMARY KEY, analysis_id UUID REFERENCES analyses(id) ON DELETE CASCADE, ...)`
 - `CREATE TABLE evidence (id UUID PRIMARY KEY, claim_id UUID REFERENCES claims(id) ON DELETE CASCADE, ...)`
+- `CREATE TABLE evidence_embeddings (evidence_id UUID PRIMARY KEY REFERENCES evidence(id) ON DELETE CASCADE, embedding vector(384), user_id UUID NULL, guest_session_id TEXT NULL)`
+- `analyses.timeline` stored as `JSONB` (array of timeline events), not plain text
+- `evidence_embeddings.evidence_id` typed as `UUID` foreign key to `evidence.id` (no untyped TEXT fallback in production schema)
 - Indexes on `analyses.status`, `claims.analysis_id`, `evidence.claim_id`
+- IVFFlat or HNSW index on `evidence_embeddings.embedding`
 - `CREATED_AT` default to `NOW()`
 
 **Acceptance Criteria**:
 - Schema SQL executes without errors on PostgreSQL 15
-- All foreign keys have CASCADE delete
+- All foreign keys have CASCADE delete and ownership constraints
 - Indexes present for expected query patterns
 
 **Tests**:
@@ -1580,25 +1633,24 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 6.2 — Configure Supabase connection and swap SQLite for PostgreSQL in production
+### Task 6.2 — Configure Supabase connection for development and production
 **Complexity**: LOW  
 **Files**: `backend/app/db/session.py`, `backend/app/core/config.py`  
-**Explanation**: Make the database engine selection conditional on `ENVIRONMENT`: use SQLite (`aiosqlite`) in development and PostgreSQL (`asyncpg`) in production.
+**Explanation**: Make Supabase PostgreSQL + pgvector the default for both development and production environments, with optional local PostgreSQL fallback if needed.
 
 **Scope**:
-- `if settings.ENVIRONMENT == "production": use asyncpg else: use aiosqlite`
-- `DATABASE_URL` in `.env` defaults to `sqlite+aiosqlite:///./dev.db` for development
+- Always use `postgresql+asyncpg://...` for app runtime in both development and production
+- `.env` defaults should target a Supabase project connection string (free tier)
 - Production `DATABASE_URL` format: `postgresql+asyncpg://user:pass@host/db`
 - Document Supabase connection string format in `.env.example`
 
 **Acceptance Criteria**:
-- Development runs with SQLite without installing PostgreSQL
-- Production works with Supabase connection string
-- Switching between environments requires only changing `.env`
+- Development and production both run against Supabase PostgreSQL with pgvector enabled
+- Environment switching requires only changing `.env` values and Supabase project references
 
 **Tests**:
-- `test_sqlite_url_uses_aiosqlite`
-- `test_postgres_url_uses_asyncpg`
+- `test_supabase_url_uses_asyncpg`
+- `test_pgvector_extension_available`
 
 ---
 
@@ -1606,9 +1658,9 @@ Update this section every time a task is completed.
 
 1. **Given** PostgreSQL 15 is running locally (or Supabase SQL editor is open), **When** I execute `backend/db/schema.sql`, **Then** `analyses`, `claims`, and `evidence` tables plus expected indexes should be created without SQL errors.
 2. **Given** those tables contain linked rows, **When** I run `DELETE FROM analyses WHERE id = '<ANALYSIS_UUID>';`, **Then** rows in `claims` and `evidence` tied to that analysis should be removed automatically by `ON DELETE CASCADE`.
-3. **Given** `.env` has `ENVIRONMENT=development` and `DATABASE_URL=sqlite+aiosqlite:///./dev.db`, **When** I start backend with uvicorn, **Then** startup should succeed without requiring PostgreSQL.
+3. **Given** `.env` has Supabase values and `DATABASE_URL=postgresql+asyncpg://...`, **When** I start backend with uvicorn, **Then** startup should succeed using Supabase PostgreSQL.
 4. **Given** `.env` has `ENVIRONMENT=production` and `DATABASE_URL=postgresql+asyncpg://...`, **When** I start backend and call `GET /api/v1/health`, **Then** the app should respond 200 while using PostgreSQL connection settings.
-5. **Given** I change only `ENVIRONMENT` and `DATABASE_URL` between development and production values, **When** I restart the service each time, **Then** the app should switch database backends with no source-code changes.
+5. **Given** I change only Supabase project credentials in `.env`, **When** I restart the service each time, **Then** the app should switch database targets with no source-code changes.
 
 ---
 
@@ -1644,7 +1696,7 @@ Update this section every time a task is completed.
 ### Task 7.2 — Create `docker-compose.yml` for local full-stack development
 **Complexity**: LOW  
 **Files**: `docker-compose.yml`  
-**Explanation**: A compose file that starts the FastAPI backend and the Next.js frontend together with a single command. Chroma runs embedded via `PersistentClient` in the backend container.
+**Explanation**: A compose file that starts the FastAPI backend and the Next.js frontend together with a single command. Runtime vectors are stored in Supabase pgvector; optional local PostgreSQL+pgvector service can be enabled for offline development.
 
 **Scope**:
 - `backend` service: builds from `backend/Dockerfile`, port 8000, env_file `.env`
@@ -1655,7 +1707,7 @@ Update this section every time a task is completed.
 **Acceptance Criteria**:
 - `docker-compose up` starts both services
 - Frontend at `localhost:3000` can reach backend at `localhost:8000`
-- ChromaDB data persists across restarts via backend-mounted volume at `CHROMA_PERSIST_DIR`
+- When local PostgreSQL profile is used, pgvector data persists via a mounted Postgres volume
 
 ---
 
@@ -1753,7 +1805,103 @@ Update this section every time a task is completed.
 | 5 — Integration & Testing | 5.1–5.6 (6 tasks) | LOW–MEDIUM |
 | 6 — Database & Storage | 6.1–6.2 (2 tasks) | LOW |
 | 7 — Deployment | 7.1–7.6 (6 tasks) | LOW |
-| **Total** | **63 tasks** | |
+| Corrections — Retrofit Completed Work | C.1–C.11 (11 tasks) | MEDIUM |
+| **Total** | **74 tasks** | |
+
+---
+
+## Correction Tasks For Already Completed Work (Retrofit)
+
+These tasks correct already-completed legacy items so the implementation matches the updated architecture.
+
+### C.1 — Replace ChromaDB dependency and runtime usage with pgvector
+**Applies to completed tasks**: 1.3, 1.10, 2.5  
+**Files**: `requirements.txt`, `backend/app/db/vector_store.py`, `backend/app/agents/retriever.py`, relevant tests  
+**Scope**:
+- Remove `chromadb` usage from code and imports
+- Add/verify `pgvector`, `psycopg[binary]`, and Supabase-compatible dependencies
+- Update retriever vector evidence `source_type` to `PGVECTOR`
+
+### C.2 — Retrofit settings and env contract for Supabase + guest retention
+**Applies to completed tasks**: 1.2  
+**Files**: `backend/app/core/config.py`, `.env.example`, tests  
+**Scope**:
+- Add required Supabase settings and validation
+- Add guest-session retention settings (`GUEST_SESSION_TTL_HOURS`)
+- Remove deprecated Chroma-specific settings
+
+### C.3 — Add migration for pgvector extension and embedding table
+**Applies to completed tasks**: 1.9, 1.10  
+**Files**: `backend/alembic/versions/*.py`, `backend/db/schema.sql`  
+**Scope**:
+- Create Alembic revision enabling vector extension
+- Add `evidence_embeddings` and vector index
+- Ensure downgrade path safely drops vector artifacts
+
+### C.4 — Retrofit evidence schema source type and contracts
+**Applies to completed tasks**: 1.5, 4.3  
+**Files**: `backend/app/schemas/evidence.py`, `frontend/src/types/api.ts`, tests  
+**Scope**:
+- Replace `VECTOR_STORE` contract usage with `PGVECTOR`
+- Update any validation and serialization tests
+
+### C.5 — Add ownership-aware data model fields and repository guards
+**Applies to completed tasks**: 1.8, 3.x scaffolding  
+**Files**: `backend/app/db/models.py`, `backend/app/db/repository.py`, migrations, route dependencies  
+**Scope**:
+- Add `user_id`, `guest_session_id`, and `is_guest` ownership markers
+- Implement requester-scoped fetch/update methods
+- Prevent cross-user and cross-session data access
+
+### C.6 — Implement guest data deletion lifecycle
+**Applies to completed tasks**: 3.x, 4.x scaffolding  
+**Files**: backend cleanup endpoint/job, frontend session handling, tests  
+**Scope**:
+- Issue server-signed guest session credentials and require them for guest cleanup actions
+- Delete guest data on explicit session end signal
+- Add TTL-based cleanup as fallback for abandoned sessions
+- Verify claims/evidence/timeline/history are removed for guest session
+
+### C.7 — Add history capability for authenticated users only
+**Applies to completed tasks**: 3.x, 4.x scaffolding  
+**Files**: analysis/history endpoints, frontend history view components/hooks, tests  
+**Scope**:
+- Add authenticated history list endpoint and UI rendering
+- Derive authenticated ownership from verified Supabase JWT (not client-supplied user-id header)
+- Ensure guests cannot view or request historical analyses beyond active session
+- Add unit and integration tests for both access modes
+
+### C.8 — Harden Supabase JWT verification strategy (production-safe)
+**Applies to completed tasks**: C.5, C.7
+**Files**: `backend/app/api/dependencies.py`, auth config/docs, tests
+**Scope**:
+- Implement Supabase-compatible token verification supporting asymmetric/JWKS validation and strict claim checks (`exp`, `sub`, issuer/audience as configured)
+- Keep shared-secret HS256 path only as an explicit development fallback
+- Add negative tests for invalid signature, wrong issuer/audience, expired token
+
+### C.9 — Normalize API field naming contract end-to-end
+**Applies to completed tasks**: 1.4, 1.5, 1.6, 4.3, 4.4
+**Files**: backend schemas/serializers, frontend API client/types, tests
+**Scope**:
+- Choose one canonical wire naming convention and codify it in backend responses and OpenAPI
+- Remove mixed per-endpoint casing transformations
+- Add contract tests to ensure analyze/poll/claims/evidence/timeline/compare all follow the same naming convention
+
+### C.10 — Retrofit timeline and session schema fidelity
+**Applies to completed tasks**: 1.8, 1.9, 6.1
+**Files**: `backend/app/db/models.py`, migrations, `backend/db/schema.sql`, repository/tests
+**Scope**:
+- Add missing `chat_sessions` model/table and ownership linkage
+- Store `analyses.timeline` as structured JSON/JSONB consistently across ORM, migrations, and SQL schema
+- Align embedding schema types with production constraints (UUID FK for `evidence_embeddings.evidence_id`)
+
+### C.11 — Align runtime defaults and config wiring with architecture
+**Applies to completed tasks**: 1.1, 1.2, 1.6
+**Files**: `backend/app/main.py`, `backend/app/core/config.py`, `backend/app/schemas/analysis.py`, tests
+**Scope**:
+- Ensure default analysis model is `gemini-3.1-flash-lite` across schema and runtime
+- Wire CORS to `ALLOWED_ORIGINS` settings instead of hardcoded values
+- Add regression tests for model default and CORS-config-driven behavior
 
 **Planned file areas** (some already exist):
 - `backend/app/schemas/` (5 files)

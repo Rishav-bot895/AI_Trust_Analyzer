@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import importlib
 
+import jwt
 from fastapi.testclient import TestClient
+
+
+def _jwt_for(user_id: str) -> str:
+    return jwt.encode(
+        {
+            "sub": user_id,
+            "exp": int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp()),
+        },
+        "test-supabase-jwt-secret-32bytes-long",
+        algorithm="HS256",
+    )
 
 
 def _load_main_module():
@@ -15,7 +28,10 @@ def test_router_prefix_applied():
     """POST analyze route should be mounted under /api/v1 prefix."""
     main = _load_main_module()
     with TestClient(main.app) as client:
-        prefixed_response = client.post("/api/v1/analyze")
+        prefixed_response = client.post(
+            "/api/v1/analyze",
+            headers={"Authorization": f"Bearer {_jwt_for('user-123')}"},
+        )
         unprefixed_response = client.post("/analyze")
 
     assert prefixed_response.status_code == 501

@@ -55,6 +55,12 @@ def test_analysis_request_response_too_long_raises():
         AnalysisRequest(prompt="Valid prompt", response="x" * 10001)
 
 
+def test_analysis_request_default_model_name():
+    """Default model name should align with Gemini architecture baseline."""
+    request = AnalysisRequest(prompt="Valid prompt", response="Valid response")
+    assert request.model_name == "gemini-3.1-flash-lite"
+
+
 def test_analysis_response_serializes_nested():
     """AnalysisResponse should serialize nested Claim and Evidence models."""
     claim = _sample_claim()
@@ -94,3 +100,38 @@ def test_analysis_status_enum():
         "COMPLETED",
         "FAILED",
     }
+
+
+def test_analysis_response_serializes_pgvector_evidence():
+    """AnalysisResponse nested evidence should preserve PGVECTOR source type."""
+    claim = _sample_claim()
+    evidence = Evidence(
+        id=uuid4(),
+        claim_id=claim.id,
+        snippet="Local vector match snippet",
+        source_url=None,
+        source_title="Vector KB",
+        relevance_score=0.77,
+        source_type=EvidenceSource.PGVECTOR,
+        polarity=None,
+        retrieved_at=datetime.now(timezone.utc),
+    )
+
+    response = AnalysisResponse(
+        id=uuid4(),
+        status=AnalysisStatus.COMPLETED,
+        trust_score=61.0,
+        hallucination_risk="MEDIUM",
+        claims=[claim],
+        evidence=[evidence],
+        critique="Mixed support from retrieval.",
+        verdict="Partially reliable.",
+        created_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
+        error=None,
+    )
+
+    payload = json.loads(response.model_dump_json())
+
+    assert payload["evidence"][0]["source_type"] == "PGVECTOR"
+    assert payload["evidence"][0]["source_url"] is None

@@ -1,0 +1,99 @@
+const GUEST_SESSION_STORAGE_KEY = "ai_trust_guest_session_id";
+const GUEST_SESSION_TOKEN_STORAGE_KEY = "ai_trust_guest_session_token";
+const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+function canUseSessionStorage(): boolean {
+  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+}
+
+export function getOrCreateGuestSessionId(): string | null {
+  if (!canUseSessionStorage()) {
+    return null;
+  }
+
+  const existing = window.sessionStorage.getItem(GUEST_SESSION_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+
+  return null;
+}
+
+function getGuestSessionToken(): string | null {
+  if (!canUseSessionStorage()) {
+    return null;
+  }
+  return window.sessionStorage.getItem(GUEST_SESSION_TOKEN_STORAGE_KEY);
+}
+
+export async function initializeGuestSession(
+  apiBaseUrl: string = DEFAULT_API_BASE_URL,
+): Promise<string | null> {
+  if (!canUseSessionStorage()) {
+    return null;
+  }
+
+  const existingId = window.sessionStorage.getItem(GUEST_SESSION_STORAGE_KEY);
+  const existingToken = window.sessionStorage.getItem(GUEST_SESSION_TOKEN_STORAGE_KEY);
+  if (existingId && existingToken) {
+    return existingId;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/v1/guest/session/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as {
+    guest_session_id: string;
+    guest_session_token: string;
+  };
+  window.sessionStorage.setItem(GUEST_SESSION_STORAGE_KEY, payload.guest_session_id);
+  window.sessionStorage.setItem(GUEST_SESSION_TOKEN_STORAGE_KEY, payload.guest_session_token);
+  return payload.guest_session_id;
+}
+
+export function endGuestSession(apiBaseUrl: string = DEFAULT_API_BASE_URL): void {
+  if (typeof navigator === "undefined") {
+    return;
+  }
+
+  const guestSessionId = getOrCreateGuestSessionId();
+  const guestSessionToken = getGuestSessionToken();
+  if (!guestSessionId || !guestSessionToken) {
+    return;
+  }
+
+  const payload = JSON.stringify({ guest_session_id: guestSessionId });
+  const endpoint = `${apiBaseUrl}/api/v1/guest/session/end`;
+
+  void fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Guest-Session-Token": guestSessionToken,
+    },
+    body: payload,
+    keepalive: true,
+  });
+}
+
+export function registerGuestSessionLifecycle(apiBaseUrl?: string): () => void {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const listener = () => endGuestSession(apiBaseUrl);
+  window.addEventListener("pagehide", listener);
+  window.addEventListener("beforeunload", listener);
+
+  return () => {
+    window.removeEventListener("pagehide", listener);
+    window.removeEventListener("beforeunload", listener);
+  };
+}

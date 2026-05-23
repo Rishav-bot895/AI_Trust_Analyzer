@@ -12,16 +12,19 @@ def test_all_imports_resolve():
         "langchain_google_genai",
         "langchain_community",
         "tavily",
-        "chromadb",
+        "pgvector",
+        "psycopg",
         "sentence_transformers",
         "sqlalchemy",
         "alembic",
         "pydantic_settings",
         "asyncpg",
+        "supabase",
         "slowapi",
         "pytest",
         "pytest_asyncio",
         "httpx",
+            "jwt",
     ]
 
     for module_name in modules:

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import settings
 
 try:
 	from app.api.router import router as api_router
@@ -38,7 +39,7 @@ def create_app() -> FastAPI:
 
 	app.add_middleware(
 		CORSMiddleware,
-		allow_origins=["http://localhost:3000"],
+		allow_origins=settings.ALLOWED_ORIGINS,
 		allow_credentials=True,
 		allow_methods=["*"],
 		allow_headers=["*"],

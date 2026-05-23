@@ -33,7 +33,7 @@ class AnalysisRequest(BaseModel):
     """AI-generated response text, required and capped at 10000 characters."""
 
     model_name: str = Field(
-        default="gpt-4o-mini", description="Model used for analysis execution"
+        default="gemini-3.1-flash-lite", description="Model used for analysis execution"
     )
     """Model used to run the analysis pipeline."""
 
