@@ -90,7 +90,7 @@ def _finalize_evidence(evidence_items: list[dict[str, Any]]) -> list[dict[str, A
 
 @timed_agent("retriever")
 def retrieve_evidence(state: AgentState) -> AgentState:
-    """Retrieve candidate evidence from Tavily and ChromaDB for each claim."""
+    """Retrieve candidate evidence from Tavily and pgvector for each claim."""
     claims = state.get("claims") or []
     if not claims:
         state["evidence"] = state.get("evidence") or []
@@ -98,6 +98,9 @@ def retrieve_evidence(state: AgentState) -> AgentState:
 
     client = _get_tavily_client()
     evidence: list[dict[str, Any]] = list(state.get("evidence") or [])
+    owner_user_id = state.get("user_id")
+    owner_guest_session_id = state.get("guest_session_id")
+    owner_is_guest = bool(state.get("is_guest", bool(owner_guest_session_id and not owner_user_id)))
 
     for claim in claims:
         if not isinstance(claim, dict):
@@ -140,11 +143,19 @@ def retrieve_evidence(state: AgentState) -> AgentState:
 
             evidence.append(candidate.model_dump(mode="json"))
 
-        try:
-            vector_results = query_similar(claim_text, n_results=3)
-        except Exception as exc:  # pragma: no cover - behavior validated via tests
-            logger.warning("Vector store query failed for claim %s: %s", claim_id, exc)
-            continue
+        vector_results: list[dict[str, Any]] = []
+        if (owner_is_guest and owner_guest_session_id) or ((not owner_is_guest) and owner_user_id):
+            try:
+                vector_results = query_similar(
+                    claim_text,
+                    n_results=3,
+                    user_id=str(owner_user_id) if owner_user_id else None,
+                    guest_session_id=str(owner_guest_session_id) if owner_guest_session_id else None,
+                    is_guest=owner_is_guest,
+                )
+            except Exception as exc:  # pragma: no cover - behavior validated via tests
+                logger.warning("Vector store query failed for claim %s: %s", claim_id, exc)
+                continue
 
         for vector_item in vector_results:
             if not isinstance(vector_item, dict):
@@ -168,7 +179,7 @@ def retrieve_evidence(state: AgentState) -> AgentState:
                     source_url=None,
                     source_title=source_title,
                     relevance_score=_distance_to_relevance(vector_item.get("distance")),
-                    source_type=EvidenceSource.VECTOR_STORE,
+                    source_type=EvidenceSource.PGVECTOR,
                 )
             except Exception:
                 continue

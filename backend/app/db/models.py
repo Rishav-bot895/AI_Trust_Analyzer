@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -19,6 +19,10 @@ class Analysis(Base):
     __tablename__ = "analyses"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    include_comparison: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
     trust_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     hallucination_risk: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -30,6 +34,9 @@ class Analysis(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    guest_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    is_guest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     claims: Mapped[list[Claim]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan"

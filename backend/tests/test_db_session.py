@@ -29,6 +29,14 @@ def test_analysis_model_table_name():
     assert Analysis.__tablename__ == "analyses"
 
 
+def test_analysis_model_has_ownership_columns():
+    """Analysis model should include ownership markers for scoped access."""
+    columns = Analysis.__table__.columns.keys()
+    assert "user_id" in columns
+    assert "guest_session_id" in columns
+    assert "is_guest" in columns
+
+
 def test_claim_fk_to_analysis():
     """Claim model should include foreign key to analyses.id."""
     fk_targets = {fk.target_fullname for fk in Claim.__table__.c.analysis_id.foreign_keys}

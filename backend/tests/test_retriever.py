@@ -41,6 +41,9 @@ def _base_state(claims: list[dict[str, Any]]) -> dict[str, Any]:
         "verdict": None,
         "timeline": [],
         "error": None,
+        "is_guest": True,
+        "guest_session_id": "guest-test",
+        "user_id": None,
     }
 
 
@@ -155,8 +158,10 @@ def test_retriever_queries_vector_store(monkeypatch):
     fake_client = _FakeTavilyClient({"Claim A": {"results": []}})
     vector_calls: list[dict[str, Any]] = []
 
-    def _fake_query_similar(query_text: str, n_results: int = 5):
+    def _fake_query_similar(query_text: str, n_results: int = 5, **kwargs):
         vector_calls.append({"query_text": query_text, "n_results": n_results})
+        assert kwargs["is_guest"] is True
+        assert kwargs["guest_session_id"] == "guest-test"
         return [
             {
                 "id": "v1",
@@ -176,7 +181,7 @@ def test_retriever_queries_vector_store(monkeypatch):
     assert vector_calls[0]["query_text"] == "Claim A"
     assert vector_calls[0]["n_results"] == 3
     assert len(result["evidence"]) == 1
-    assert result["evidence"][0]["source_type"] == "VECTOR_STORE"
+    assert result["evidence"][0]["source_type"] == "PGVECTOR"
     assert result["evidence"][0]["source_url"] is None
 
 
@@ -186,7 +191,7 @@ def test_retriever_empty_vector_store_ok(monkeypatch):
     fake_client = _FakeTavilyClient({"Claim A": {"results": []}})
 
     monkeypatch.setattr(retriever, "_get_tavily_client", lambda: fake_client)
-    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3: [])
+    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3, **kwargs: [])
 
     state = _base_state(claims)
     result = retriever.retrieve_evidence(state)
@@ -217,7 +222,7 @@ def test_retriever_merges_both_sources(monkeypatch):
     monkeypatch.setattr(
         retriever,
         "query_similar",
-        lambda query_text, n_results=3: [
+        lambda query_text, n_results=3, **kwargs: [
             {
                 "id": "vec-1",
                 "snippet": "Vector evidence for claim A.",
@@ -232,7 +237,7 @@ def test_retriever_merges_both_sources(monkeypatch):
 
     assert len(result["evidence"]) == 2
     source_types = {item["source_type"] for item in result["evidence"]}
-    assert source_types == {"WEB_SEARCH", "VECTOR_STORE"}
+    assert source_types == {"WEB_SEARCH", "PGVECTOR"}
 
 
 def test_retriever_deduplicates_by_url(monkeypatch):
@@ -260,7 +265,7 @@ def test_retriever_deduplicates_by_url(monkeypatch):
     )
 
     monkeypatch.setattr(retriever, "_get_tavily_client", lambda: fake_client)
-    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3: [])
+    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3, **kwargs: [])
 
     state = _base_state(claims)
     result = retriever.retrieve_evidence(state)
@@ -294,7 +299,7 @@ def test_retriever_keeps_highest_relevance_on_dupe(monkeypatch):
     )
 
     monkeypatch.setattr(retriever, "_get_tavily_client", lambda: fake_client)
-    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3: [])
+    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3, **kwargs: [])
 
     state = _base_state(claims)
     result = retriever.retrieve_evidence(state)
@@ -335,7 +340,7 @@ def test_retriever_sorts_by_relevance(monkeypatch):
     )
 
     monkeypatch.setattr(retriever, "_get_tavily_client", lambda: fake_client)
-    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3: [])
+    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3, **kwargs: [])
 
     state = _base_state(claims)
     result = retriever.retrieve_evidence(state)
@@ -366,7 +371,7 @@ def test_retriever_caps_per_claim(monkeypatch):
         return rows
 
     monkeypatch.setattr(retriever, "_get_tavily_client", lambda: fake_client)
-    monkeypatch.setattr(retriever, "query_similar", _fake_vector_results)
+    monkeypatch.setattr(retriever, "query_similar", lambda query_text, n_results=3, **kwargs: _fake_vector_results(query_text, n_results))
 
     state = _base_state(claims)
     result = retriever.retrieve_evidence(state)
