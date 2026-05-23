@@ -1,9 +1,92 @@
 # AI Trust Analyzer — Implementation Plan
 
-**Project state**: Phase 1 backend foundation is substantially implemented and tested. Treat this document as the execution plan from Phase 2 onward, plus alignment fixes for remaining gaps.
+**Project state**: Phase 1 backend foundation is complete and tested. Phase 2 is in progress (Tasks 2.1-2.3 complete). Treat this document as the execution plan for remaining work.
 
 **Goal**: Build a full-stack factuality-risk analysis tool. User pastes an AI-generated response, five LangGraph agents (Extractor → Retriever → Verifier → Critic → Judge) analyze it, and a React UI displays trust scores, claim-by-claim verdicts, evidence citations, and an agent execution timeline.
 This is decision-support, not definitive hallucination detection; outputs must include transparent confidence labeling and evidence provenance.
+
+---
+
+## Completed Tasks Tracker
+
+Update this section every time a task is completed.
+
+### Phase 1 - Backend Foundation
+- [x] 1.1 Initialize FastAPI application in main.py
+- [x] 1.2 Implement Settings configuration class in config.py
+- [x] 1.3 Add all missing packages to requirements.txt
+- [x] 1.4 Create Pydantic schemas for Claim and ClaimStatus
+- [x] 1.5 Create Pydantic schemas for Evidence
+- [x] 1.6 Create Pydantic schemas for Analysis request and response
+- [x] 1.7 Create Pydantic schema for AgentState (LangGraph state)
+- [x] 1.8 Set up SQLAlchemy database models and session management
+- [x] 1.9 Create Alembic migration for initial database schema
+- [x] 1.10 Set up ChromaDB client and vector collection initialization
+- [x] 1.11 Wire up the API router in router.py and mount to main.py
+
+### Phase 2 - Agent Implementation
+- [x] 2.1 Create agent base utilities and LLM factory
+- [x] 2.2 Implement Claim Extractor agent - LLM call and prompt
+- [x] 2.3 Implement Claim Extractor agent - output parsing and validation
+- [ ] 2.4 Implement Retriever agent - Tavily web search
+- [ ] 2.5 Implement Retriever agent - ChromaDB vector store queries
+- [ ] 2.6 Implement Retriever agent - deduplication and evidence ranking
+- [ ] 2.7 Implement Verifier agent - claim vs evidence comparison
+- [ ] 2.8 Implement Verifier agent - per-claim confidence scoring
+- [ ] 2.9 Implement Critic agent - logical fallacy and quality analysis
+- [ ] 2.10 Implement Critic agent - output formatting and structured critique
+- [ ] 2.11 Implement Judge agent - trust score calculation
+- [ ] 2.12 Implement Judge agent - hallucination risk and verdict
+- [ ] 2.13 Implement LangGraph workflow - state schema and graph setup
+- [ ] 2.14 Implement LangGraph workflow - error handling and conditional edges
+- [ ] 2.15 Implement LangGraph workflow - async execution and public interface
+
+### Phase 3 - API Routes
+- [ ] 3.1 Implement POST /api/v1/analyze route
+- [ ] 3.2 Implement GET /api/v1/analyze/{id} route for polling
+- [ ] 3.3 Implement GET /api/v1/analyze/{id}/claims route
+- [ ] 3.4 Implement GET /api/v1/analyze/{id}/evidence route
+- [ ] 3.5 Implement GET /api/v1/analyze/{id}/timeline route
+- [ ] 3.6 Implement POST /api/v1/compare route
+- [ ] 3.7 Add error handling middleware and rate limiting
+- [ ] 3.8 Implement CRUD repository layer for database operations
+
+### Phase 4 - Frontend Components
+- [ ] 4.1 Update layout.tsx and application metadata
+- [ ] 4.2 Set up global CSS design tokens and Tailwind base styles
+- [ ] 4.3 Create TypeScript types matching backend API schemas
+- [ ] 4.4 Create API client module with fetch wrapper
+- [ ] 4.5 Create useAnalysis and usePolling React hooks
+- [ ] 4.6 Build AnalysisInputForm component
+- [ ] 4.7 Build TrustScoreCard component
+- [ ] 4.8 Build ClaimsTable component with status badges
+- [ ] 4.9 Build EvidencePanel component
+- [ ] 4.10 Install React Flow and build AgentTimeline component
+- [ ] 4.11 Build ModelComparisonTable component
+- [ ] 4.12 Build TabNavigation component
+- [ ] 4.13 Assemble ResultsView page combining all components
+- [ ] 4.14 Replace page.tsx boilerplate with full app layout
+- [ ] 4.15 Add loading skeleton states for async content
+
+### Phase 5 - Integration and End-to-End Testing
+- [ ] 5.1 Set up pytest fixtures and test database
+- [ ] 5.2 Write full-pipeline integration test (happy path)
+- [ ] 5.3 Write integration tests for edge cases and error handling
+- [ ] 5.4 Set up Vitest and React Testing Library in frontend
+- [ ] 5.5 Write frontend unit tests for form and score components
+- [ ] 5.6 Write frontend unit tests for table and panel components
+
+### Phase 6 - Database and Storage
+- [ ] 6.1 Write production database schema SQL for Supabase
+- [ ] 6.2 Configure Supabase connection and swap SQLite for PostgreSQL in production
+
+### Phase 7 - Deployment and CI/CD
+- [ ] 7.1 Create Dockerfile for the FastAPI backend
+- [ ] 7.2 Create docker-compose.yml for local full-stack development
+- [ ] 7.3 Create GitHub Actions CI workflow
+- [ ] 7.4 Configure Render deployment for backend
+- [ ] 7.5 Configure Vercel deployment for frontend
+- [ ] 7.6 Write production environment variables documentation
 
 ---
 
@@ -21,7 +104,7 @@ This is decision-support, not definitive hallucination detection; outputs must i
 | 6 | Database & storage | Phase 1 complete |
 | 7 | Deployment & CI/CD | Phases 2, 3, 4 stable |
 
-**Agents within Phase 2** can be developed in parallel (Tasks 2.5–2.23), but Task 2.24–2.27 (LangGraph wiring) depends on all five agents being complete.
+**Agent implementation tracks in Phase 2** can be developed in parallel (Tasks 2.4-2.12), but LangGraph wiring (Tasks 2.13-2.15) depends on all five agents being complete.
 
 ---
 
@@ -312,7 +395,7 @@ This is decision-support, not definitive hallucination detection; outputs must i
 ---
 
 ## PHASE 2 — Agent Implementation
-> Agents 2.1–2.5 can be developed in parallel. LangGraph wiring (2.24–2.27) requires all five agents.
+> Agent implementation tracks (Tasks 2.4-2.12) can be developed in parallel. LangGraph wiring (Tasks 2.13-2.15) requires all five agents.
 > Migration note: Phase 1 is already complete; begin Phase 2 on the Gemini + Tavily (free tier) stack defined in this plan.
 
 ---
@@ -1602,9 +1685,9 @@ This is decision-support, not definitive hallucination detection; outputs must i
 | 7 — Deployment | 7.1–7.6 (6 tasks) | LOW |
 | **Total** | **63 tasks** | |
 
-**New files to create** (none exist yet):
+**Planned file areas** (some already exist):
 - `backend/app/schemas/` (5 files)
-- `backend/app/agents/` (6 files: base, extractor, retriever, verifier, critic, judge, workflow)
+- `backend/app/agents/` (7 files: base, claim_extractor, retriever, verifier, critic, judge, workflow)
 - `backend/app/db/` (4 files: models, session, vector_store, repository)
 - `backend/app/api/routes/` (3 files: analysis, comparison, health)
 - `backend/alembic/` (full Alembic setup)
