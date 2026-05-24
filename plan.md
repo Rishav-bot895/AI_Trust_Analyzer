@@ -43,10 +43,10 @@ Update this section every time a task is completed.
 - [x] 2.6 Implement Retriever agent - deduplication and evidence ranking
 - [x] 2.7 Implement Verifier agent - claim vs evidence comparison
 - [x] 2.8 Implement Verifier agent - per-claim confidence scoring
-- [ ] 2.9 Implement Critic agent - logical fallacy and quality analysis
-- [ ] 2.10 Implement Critic agent - output formatting and structured critique
-- [ ] 2.11 Implement Judge agent - trust score calculation
-- [ ] 2.12 Implement Judge agent - hallucination risk and verdict
+- [x] 2.9 Implement Critic agent - logical fallacy and quality analysis
+- [x] 2.10 Implement Critic agent - output formatting and structured critique
+- [x] 2.11 Implement Judge agent - trust score calculation
+- [x] 2.12 Implement Judge agent - hallucination risk and verdict
 - [ ] 2.13 Implement LangGraph workflow - state schema and graph setup
 - [ ] 2.14 Implement LangGraph workflow - error handling and conditional edges
 - [ ] 2.15 Implement LangGraph workflow - async execution and public interface
