@@ -47,9 +47,9 @@ Update this section every time a task is completed.
 - [x] 2.10 Implement Critic agent - output formatting and structured critique
 - [x] 2.11 Implement Judge agent - trust score calculation
 - [x] 2.12 Implement Judge agent - hallucination risk and verdict
-- [ ] 2.13 Implement LangGraph workflow - state schema and graph setup
-- [ ] 2.14 Implement LangGraph workflow - error handling and conditional edges
-- [ ] 2.15 Implement LangGraph workflow - async execution and public interface
+- [x] 2.13 Implement LangGraph workflow - state schema and graph setup
+- [x] 2.14 Implement LangGraph workflow - error handling and conditional edges
+- [x] 2.15 Implement LangGraph workflow - async execution and public interface
 
 ### Phase 3 - API Routes
 - [ ] 3.1 Implement POST /api/v1/analyze route
