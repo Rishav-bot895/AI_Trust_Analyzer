@@ -7,6 +7,10 @@ import importlib
 
 import jwt
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.db.models import Base
+from app.db.session import get_db
 
 
 def _jwt_for(user_id: str) -> str:
@@ -24,17 +28,39 @@ def _load_main_module():
     return importlib.import_module("app.main")
 
 
-def test_router_prefix_applied():
+def test_router_prefix_applied(monkeypatch):
     """POST analyze route should be mounted under /api/v1 prefix."""
+    async def _fake_background(**_: object) -> None:
+        return None
+
+    analysis_routes = importlib.import_module("app.api.routes.analysis")
+    monkeypatch.setattr(analysis_routes, "_run_analysis_in_background", _fake_background)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        async with session_factory() as session:
+            yield session
+
     main = _load_main_module()
+    main.app.dependency_overrides[get_db] = override_get_db
     with TestClient(main.app) as client:
         prefixed_response = client.post(
             "/api/v1/analyze",
+            json={
+                "prompt": "Explain gravity",
+                "response": "Gravity attracts masses toward each other.",
+                "model_name": "gemini-3.1-flash-lite",
+            },
             headers={"Authorization": f"Bearer {_jwt_for('user-123')}"},
         )
         unprefixed_response = client.post("/analyze")
+    main.app.dependency_overrides.clear()
 
-    assert prefixed_response.status_code == 501
+    assert prefixed_response.status_code == 202
     assert unprefixed_response.status_code == 404
 
 

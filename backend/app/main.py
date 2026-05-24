@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.middleware import limiter, register_exception_handlers
 from app.core.config import settings
 
 try:
@@ -44,6 +45,9 @@ def create_app() -> FastAPI:
 		allow_methods=["*"],
 		allow_headers=["*"],
 	)
+
+	app.state.limiter = limiter
+	register_exception_handlers(app)
 
 	app.include_router(api_router)
 
