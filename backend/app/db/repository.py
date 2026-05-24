@@ -7,8 +7,9 @@ from datetime import datetime
 
 from sqlalchemy import Select, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.db.models import Analysis
+from app.db.models import Analysis, Claim
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,9 @@ class AnalysisRepository:
     async def get_analysis(self, analysis_id: str, owner: RequestOwner) -> Analysis | None:
         """Fetch a single analysis if and only if the requester owns it."""
         result = await self._session.execute(
-            self._scoped_query(owner).where(Analysis.id == analysis_id)
+            self._scoped_query(owner)
+            .options(selectinload(Analysis.claims).selectinload(Claim.evidence))
+            .where(Analysis.id == analysis_id)
         )
         return result.scalar_one_or_none()
 

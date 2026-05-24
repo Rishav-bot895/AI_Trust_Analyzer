@@ -52,8 +52,8 @@ Update this section every time a task is completed.
 - [x] 2.15 Implement LangGraph workflow - async execution and public interface
 
 ### Phase 3 - API Routes
-- [ ] 3.1 Implement POST /api/v1/analyze route
-- [ ] 3.2 Implement GET /api/v1/analyze/{id} route for polling
+- [x] 3.1 Implement POST /api/v1/analyze route
+- [x] 3.2 Implement GET /api/v1/analyze/{id} route for polling
 - [ ] 3.3 Implement GET /api/v1/analyze/{id}/claims route
 - [ ] 3.4 Implement GET /api/v1/analyze/{id}/evidence route
 - [ ] 3.5 Implement GET /api/v1/analyze/{id}/timeline route
