@@ -139,3 +139,34 @@ class AnalysisListItem(BaseModel):
 
     error: str | None = Field(default=None, description="Error message when analysis fails")
     """Error message when analysis fails."""
+
+
+class ComparisonRequest(BaseModel):
+    """Request payload for synchronous multi-model comparison runs."""
+
+    prompt: str = Field(
+        ..., min_length=1, max_length=2000, description="Original user prompt"
+    )
+    """Original user prompt text, required and capped at 2000 characters."""
+
+    response: str = Field(
+        ..., min_length=1, max_length=10000, description="AI-generated response to analyze"
+    )
+    """AI-generated response text, required and capped at 10000 characters."""
+
+    models: list[str] = Field(
+        default_factory=lambda: ["gemini-3.1-flash-lite"],
+        min_length=1,
+        description="List of model names to compare",
+    )
+    """Model names to execute during comparison."""
+
+
+class ComparisonResponse(BaseModel):
+    """Response payload containing one analysis result per requested model."""
+
+    analyses: list[AnalysisResponse] = Field(
+        default_factory=list,
+        description="Analysis results returned in request model order",
+    )
+    """Analysis results returned in request model order."""

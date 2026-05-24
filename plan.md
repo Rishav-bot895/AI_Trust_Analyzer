@@ -54,12 +54,12 @@ Update this section every time a task is completed.
 ### Phase 3 - API Routes
 - [x] 3.1 Implement POST /api/v1/analyze route
 - [x] 3.2 Implement GET /api/v1/analyze/{id} route for polling
-- [ ] 3.3 Implement GET /api/v1/analyze/{id}/claims route
-- [ ] 3.4 Implement GET /api/v1/analyze/{id}/evidence route
-- [ ] 3.5 Implement GET /api/v1/analyze/{id}/timeline route
-- [ ] 3.6 Implement POST /api/v1/compare route
-- [ ] 3.7 Add error handling middleware and rate limiting
-- [ ] 3.8 Implement CRUD repository layer for database operations
+- [x] 3.3 Implement GET /api/v1/analyze/{id}/claims route
+- [x] 3.4 Implement GET /api/v1/analyze/{id}/evidence route
+- [x] 3.5 Implement GET /api/v1/analyze/{id}/timeline route
+- [x] 3.6 Implement POST /api/v1/compare route
+- [x] 3.7 Add error handling middleware and rate limiting
+- [x] 3.8 Implement CRUD repository layer for database operations
 
 ### Phase 4 - Frontend Components
 - [ ] 4.1 Update layout.tsx and application metadata

@@ -6,16 +6,19 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.workflow import run_analysis
 from app.api.dependencies import get_request_owner
+from app.api.middleware import limiter
 from app.db.repository import AnalysisRepository, RequestOwner
 from app.db.session import AsyncSessionLocal, get_db
 from app.schemas.analysis import AnalysisListItem, AnalysisRequest, AnalysisResponse
-from app.schemas.claim import Claim
+from app.schemas.agent_state import TimelineEvent
+from app.schemas.claim import Claim, ClaimStatus
 from app.schemas.evidence import Evidence
 
 
@@ -38,7 +41,7 @@ async def _run_analysis_in_background(
         if analysis is None:
             return
 
-        analysis.status = "RUNNING"
+        await repository.update_analysis_status(analysis_id, owner, "RUNNING")
         await db.commit()
 
         try:
@@ -50,45 +53,46 @@ async def _run_analysis_in_background(
             )
         except Exception as exc:  # pragma: no cover
             logger.exception("Background analysis failed for %s", analysis_id)
-            analysis = await repository.get_analysis(analysis_id, owner)
-            if analysis is None:
-                return
 
-            analysis.status = "FAILED"
-            analysis.error = str(exc)
-            analysis.completed_at = datetime.now(timezone.utc)
+            await repository.update_analysis_result(
+                analysis_id,
+                owner,
+                {
+                    "analysis_id": analysis_id,
+                    "prompt": prompt,
+                    "response": response,
+                    "model_name": model_name,
+                    "claims": [],
+                    "evidence": [],
+                    "verified_claims": [],
+                    "critique": None,
+                    "trust_score": None,
+                    "hallucination_risk": "UNKNOWN",
+                    "verdict": None,
+                    "timeline": [],
+                    "error": str(exc),
+                },
+            )
             await db.commit()
             return
 
-        analysis = await repository.get_analysis(analysis_id, owner)
-        if analysis is None:
-            return
-
-        analysis.status = "FAILED" if state.get("error") else "COMPLETED"
-        analysis.trust_score = state.get("trust_score")
-        analysis.hallucination_risk = state.get("hallucination_risk")
-        analysis.critique = state.get("critique")
-        analysis.verdict = state.get("verdict")
-        analysis.error = state.get("error")
-        analysis.timeline = json.dumps(state.get("timeline") or [])
-        analysis.completed_at = datetime.now(timezone.utc)
+        await repository.update_analysis_result(analysis_id, owner, state)
         await db.commit()
 
 
 @analysis_router.post("/analyze", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("30/minute")
 async def analyze_route(
+    request: Request,
     payload: AnalysisRequest,
     background_tasks: BackgroundTasks,
     owner: Annotated[RequestOwner, Depends(get_request_owner)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, str]:
     """Create a pending analysis and dispatch background execution."""
+    _ = request
     repository = AnalysisRepository(db)
-    analysis = await repository.create_analysis(owner, status="PENDING")
-    analysis.prompt = payload.prompt
-    analysis.response = payload.response
-    analysis.model_name = payload.model_name
-    analysis.include_comparison = payload.include_comparison
+    analysis = await repository.create_analysis(owner, request=payload, status="PENDING")
     await db.commit()
 
     background_tasks.add_task(
@@ -192,3 +196,115 @@ async def get_analysis_by_id(
         completed_at=analysis.completed_at,
         error=analysis.error,
     )
+
+
+@analysis_router.get("/analyze/{analysis_id}/claims", response_model=list[Claim])
+async def get_analysis_claims(
+    analysis_id: str,
+    owner: Annotated[RequestOwner, Depends(get_request_owner)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status_filter: str | None = Query(default=None, alias="status"),
+) -> list[Claim]:
+    """Return requester-scoped claims, optionally filtered by claim status."""
+    repository = AnalysisRepository(db)
+    analysis = await repository.get_analysis(analysis_id, owner)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
+
+    claim_status: ClaimStatus | None = None
+    if status_filter is not None:
+        try:
+            claim_status = ClaimStatus(status_filter)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid claim status: {status_filter}",
+            ) from exc
+
+    claims = await repository.get_claims(
+        analysis_id,
+        owner,
+        status=claim_status.value if claim_status else None,
+    )
+    return [
+        Claim(
+            id=db_claim.id,
+            text=db_claim.text,
+            confidence=db_claim.confidence,
+            status=db_claim.status,
+            claim_index=db_claim.claim_index,
+            source_span=db_claim.source_span,
+        )
+        for db_claim in claims
+    ]
+
+
+@analysis_router.get("/analyze/{analysis_id}/evidence", response_model=list[Evidence])
+async def get_analysis_evidence(
+    analysis_id: str,
+    owner: Annotated[RequestOwner, Depends(get_request_owner)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    claim_id: UUID | None = Query(default=None),
+) -> list[Evidence]:
+    """Return requester-scoped evidence, optionally filtered by claim id."""
+    repository = AnalysisRepository(db)
+    analysis = await repository.get_analysis(analysis_id, owner)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
+
+    evidence_items = await repository.get_evidence(
+        analysis_id,
+        owner,
+        claim_id=str(claim_id) if claim_id else None,
+    )
+    return [
+        Evidence(
+            id=db_evidence.id,
+            claim_id=db_evidence.claim_id,
+            snippet=db_evidence.snippet,
+            source_url=db_evidence.source_url,
+            source_title=db_evidence.source_title,
+            relevance_score=db_evidence.relevance_score,
+            source_type=db_evidence.source_type,
+            polarity=db_evidence.polarity,
+            retrieved_at=db_evidence.retrieved_at,
+        )
+        for db_evidence in evidence_items
+    ]
+
+
+@analysis_router.get("/analyze/{analysis_id}/timeline", response_model=list[TimelineEvent])
+async def get_analysis_timeline(
+    analysis_id: str,
+    owner: Annotated[RequestOwner, Depends(get_request_owner)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[TimelineEvent]:
+    """Return requester-scoped agent execution timeline in recorded order."""
+    repository = AnalysisRepository(db)
+    analysis = await repository.get_analysis(analysis_id, owner)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
+
+    if not analysis.timeline:
+        return []
+
+    try:
+        timeline = json.loads(analysis.timeline)
+    except json.JSONDecodeError:
+        logger.warning("Invalid timeline JSON for analysis %s", analysis_id)
+        return []
+
+    if not isinstance(timeline, list):
+        return []
+
+    return [
+        TimelineEvent(
+            agent=str(event.get("agent", "")),
+            started_at=str(event.get("started_at", "")),
+            completed_at=str(event.get("completed_at", "")),
+            input_summary=str(event.get("input_summary", "")),
+            output_summary=str(event.get("output_summary", "")),
+        )
+        for event in timeline
+        if isinstance(event, dict)
+    ]

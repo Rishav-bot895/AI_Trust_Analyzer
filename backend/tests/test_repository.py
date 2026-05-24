@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.models import Analysis, Base, Claim, Evidence
 from app.db.repository import AnalysisRepository, RequestOwner
+from app.schemas.analysis import AnalysisRequest
 
 
 async def _build_session() -> AsyncSession:
@@ -37,6 +38,133 @@ async def test_repository_blocks_cross_user_reads():
 
     assert visible_to_a is not None
     assert hidden_from_b is None
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_create_analysis_returns_orm_object():
+    session = await _build_session()
+    repo = AnalysisRepository(session)
+    owner = RequestOwner(is_guest=False, user_id="user-orm")
+
+    payload = AnalysisRequest(
+        prompt="Prompt",
+        response="Response",
+        model_name="model-x",
+        include_comparison=True,
+    )
+
+    analysis = await repo.create_analysis(owner, request=payload, status="PENDING")
+    await session.commit()
+
+    assert isinstance(analysis, Analysis)
+    assert analysis.id
+    assert analysis.user_id == "user-orm"
+    assert analysis.prompt == "Prompt"
+    assert analysis.response == "Response"
+    assert analysis.model_name == "model-x"
+    assert analysis.include_comparison is True
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_get_analysis_unknown_returns_none():
+    session = await _build_session()
+    repo = AnalysisRepository(session)
+    owner = RequestOwner(is_guest=False, user_id="user-unknown")
+
+    found = await repo.get_analysis_for_requester(
+        "00000000-0000-0000-0000-000000000000",
+        owner,
+    )
+
+    assert found is None
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_update_analysis_result_persists():
+    session = await _build_session()
+    repo = AnalysisRepository(session)
+    owner = RequestOwner(is_guest=False, user_id="user-update")
+
+    analysis = await repo.create_analysis(owner)
+    claim_id = "11111111-1111-1111-1111-111111111111"
+    state = {
+        "analysis_id": analysis.id,
+        "prompt": "Prompt",
+        "response": "Response",
+        "model_name": "model-y",
+        "claims": [],
+        "verified_claims": [
+            {
+                "id": claim_id,
+                "text": "A verifiable claim",
+                "confidence": 0.82,
+                "status": "SUPPORTED",
+                "claim_index": 0,
+            }
+        ],
+        "evidence": [
+            {
+                "claim_id": claim_id,
+                "snippet": "Supporting source snippet",
+                "source_url": "https://example.com/source",
+                "source_title": "Example Source",
+                "relevance_score": 0.9,
+                "source_type": "WEB_SEARCH",
+                "polarity": "supporting",
+            }
+        ],
+        "critique": "Looks accurate.",
+        "trust_score": 91.5,
+        "hallucination_risk": "LOW",
+        "verdict": "Trustworthy",
+        "timeline": [{"agent": "extractor"}],
+        "error": None,
+    }
+
+    updated = await repo.update_analysis_result(analysis.id, owner, state)
+    await session.commit()
+
+    assert updated is not None
+    reloaded = await repo.get_analysis_for_requester(analysis.id, owner)
+    assert reloaded is not None
+    assert reloaded.status == "COMPLETED"
+    assert reloaded.trust_score == 91.5
+    assert reloaded.verdict == "Trustworthy"
+    assert "extractor" in (reloaded.timeline or "")
+    assert len(reloaded.claims) == 1
+    assert len(reloaded.claims[0].evidence) == 1
+
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_get_claims_filter_works():
+    session = await _build_session()
+    repo = AnalysisRepository(session)
+    owner = RequestOwner(is_guest=False, user_id="user-claims")
+
+    analysis = await repo.create_analysis(owner)
+    await repo.create_claims(
+        analysis.id,
+        [
+            {"text": "Supported claim", "status": "SUPPORTED", "claim_index": 0},
+            {"text": "Unsupported claim", "status": "UNSUPPORTED", "claim_index": 1},
+        ],
+    )
+    await session.commit()
+
+    all_claims = await repo.get_claims(analysis.id, owner)
+    unsupported = await repo.get_claims(analysis.id, owner, status="UNSUPPORTED")
+
+    assert len(all_claims) == 2
+    assert len(unsupported) == 1
+    assert unsupported[0].status == "UNSUPPORTED"
 
     await session.close()
 
