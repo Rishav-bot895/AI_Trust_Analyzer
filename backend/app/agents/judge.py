@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from typing import Any
+
+from app.agents.base import SYSTEM_PROMPT_FACTUALITY, get_llm, timed_agent
+from app.schemas.agent_state import AgentState
+from app.schemas.claim import ClaimStatus
+
+
+_STATUS_WEIGHTS: dict[str, float] = {
+    ClaimStatus.SUPPORTED.value: 1.0,
+    ClaimStatus.PARTIALLY_SUPPORTED.value: 0.65,
+    ClaimStatus.UNSUPPORTED.value: 0.4,
+    ClaimStatus.CONTRADICTED.value: 0.0,
+    ClaimStatus.UNVERIFIABLE.value: 0.5,
+}
+
+
+def _extract_verified_claims(state: AgentState) -> list[dict[str, Any]]:
+    claims = state.get("verified_claims") or state.get("claims") or []
+    return [claim for claim in claims if isinstance(claim, dict)]
+
+
+def _extract_evidence(state: AgentState) -> list[dict[str, Any]]:
+    evidence = state.get("evidence") or []
+    return [item for item in evidence if isinstance(item, dict)]
+
+
+def _base_score_from_claims(claims: list[dict[str, Any]]) -> float:
+    if not claims:
+        return 0.0
+
+    total = 0.0
+    for claim in claims:
+        status = str(claim.get("status") or ClaimStatus.UNVERIFIABLE.value).strip().upper()
+        total += _STATUS_WEIGHTS.get(status, _STATUS_WEIGHTS[ClaimStatus.UNVERIFIABLE.value])
+
+    return (total / len(claims)) * 100.0
+
+
+def _evidence_adjustment(
+    claims: list[dict[str, Any]],
+    evidence_items: list[dict[str, Any]],
+) -> float:
+    evidence_by_claim: dict[str, list[dict[str, Any]]] = {}
+    for item in evidence_items:
+        claim_id = item.get("claim_id")
+        if claim_id is None:
+            continue
+        evidence_by_claim.setdefault(str(claim_id), []).append(item)
+
+    adjustment = 0.0
+    for claim in claims:
+        claim_id = claim.get("id")
+        if claim_id is None:
+            continue
+
+        status = str(claim.get("status") or "").strip().upper()
+        claim_evidence = evidence_by_claim.get(str(claim_id), [])
+
+        for_count = sum(
+            1
+            for item in claim_evidence
+            if str(item.get("polarity") or "").strip().upper() == "FOR"
+        )
+        against_count = sum(
+            1
+            for item in claim_evidence
+            if str(item.get("polarity") or "").strip().upper() == "AGAINST"
+        )
+
+        if status in {ClaimStatus.SUPPORTED.value, ClaimStatus.PARTIALLY_SUPPORTED.value}:
+            adjustment += float((for_count // 3) * 2)
+        if status in {ClaimStatus.CONTRADICTED.value, ClaimStatus.PARTIALLY_SUPPORTED.value}:
+            adjustment -= float((against_count // 3) * 2)
+
+    return adjustment
+
+
+def _count_critic_issues(critique: str | None) -> int:
+    if not critique:
+        return 0
+
+    content = critique.strip()
+    if not content or content == "No logical issues detected.":
+        return 0
+
+    lines = [line.strip() for line in content.splitlines()]
+    in_logical_section = False
+    issue_count = 0
+
+    for line in lines:
+        if line.startswith("## "):
+            if line == "## Logical Issues":
+                in_logical_section = True
+                continue
+            if in_logical_section:
+                break
+
+        if in_logical_section and line.startswith("- "):
+            issue_count += 1
+
+    if issue_count > 0:
+        return issue_count
+
+    return sum(1 for line in lines if line.startswith("- "))
+
+
+def _clamp_score(score: float) -> int:
+    if score < 0:
+        return 0
+    if score > 100:
+        return 100
+    return int(round(score))
+
+
+def _risk_from_score(score: int) -> str:
+    if score >= 80:
+        return "LOW"
+    if score >= 50:
+        return "MEDIUM"
+    return "HIGH"
+
+
+def _top_issues_from_critique(critique: str | None) -> list[str]:
+    if not critique:
+        return []
+
+    issues: list[str] = []
+    for raw_line in critique.splitlines():
+        line = raw_line.strip()
+        if line.startswith("- "):
+            issues.append(line[2:].strip())
+        if len(issues) == 3:
+            break
+    return issues
+
+
+def _fallback_verdict(score: int, risk: str, issues: list[str]) -> str:
+    if issues:
+        return (
+            f"Trust score is {score}/100 with {risk} hallucination risk. "
+            f"Top concern: {issues[0]}."
+        )
+    return (
+        f"Trust score is {score}/100 with {risk} hallucination risk. "
+        "No major logical issues were highlighted in the critique."
+    )
+
+
+def _generate_verdict(score: int, risk: str, issues: list[str], model_name: str) -> str:
+    issue_context = "\n".join(f"- {item}" for item in issues) if issues else "- none"
+    prompt = "\n".join(
+        [
+            f"Trust score: {score}",
+            f"Hallucination risk: {risk}",
+            "Top issues:",
+            issue_context,
+            "Write a concise verdict in 1-3 sentences.",
+        ]
+    )
+
+    try:
+        llm = get_llm(model_name=model_name)
+        response = llm.invoke(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        f"{SYSTEM_PROMPT_FACTUALITY} "
+                        "Write clear decision-support summaries and avoid absolute claims."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ]
+        )
+        content = getattr(response, "content", response)
+        verdict = str(content).strip()
+        if verdict:
+            return verdict
+    except Exception:
+        pass
+
+    return _fallback_verdict(score, risk, issues)
+
+
+@timed_agent("judge")
+def judge_analysis(state: AgentState) -> AgentState:
+    """Compute trust score/risk and generate a concise verdict summary."""
+    claims = _extract_verified_claims(state)
+    evidence_items = _extract_evidence(state)
+
+    score = _base_score_from_claims(claims)
+    score += _evidence_adjustment(claims, evidence_items)
+    score -= float(_count_critic_issues(state.get("critique")) * 5)
+
+    rounded_score = _clamp_score(score)
+    risk = _risk_from_score(rounded_score)
+    issues = _top_issues_from_critique(state.get("critique"))
+    model_name = str(state.get("model_name") or "gemini-3.1-flash-lite")
+
+    state["trust_score"] = float(rounded_score)
+    state["hallucination_risk"] = risk
+    state["verdict"] = _generate_verdict(rounded_score, risk, issues, model_name)
+    return state
