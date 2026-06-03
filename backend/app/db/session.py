@@ -9,7 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import settings
 
 
-engine = create_async_engine(settings.DATABASE_URL, future=True)
+def _database_url_for_runtime() -> str:
+    """Return validated runtime database URL for async SQLAlchemy engine."""
+    if settings.ENVIRONMENT in {"development", "production"} and not settings.DATABASE_URL.startswith(
+        "postgresql+asyncpg://"
+    ):
+        raise RuntimeError(
+            "DATABASE_URL must use postgresql+asyncpg:// in development and production"
+        )
+    return settings.DATABASE_URL
+
+
+engine = create_async_engine(_database_url_for_runtime(), future=True)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

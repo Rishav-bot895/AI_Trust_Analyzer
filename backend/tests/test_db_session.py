@@ -18,7 +18,12 @@ def _reload_session_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test_task_1_8.db")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "jwt-secret")
     sys.modules.pop("app.core.config", None)
     sys.modules.pop("app.db.session", None)
     return importlib.import_module("app.db.session")
@@ -71,3 +76,29 @@ async def test_get_db_closes_on_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         await anext(gen)
 
     close_spy.assert_awaited_once()
+
+
+def test_supabase_url_uses_asyncpg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    """Development and production configurations should enforce asyncpg URLs."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "jwt-secret")
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/testdb")
+
+    sys.modules.pop("app.core.config", None)
+    config = importlib.import_module("app.core.config")
+
+    assert config.settings.DATABASE_URL.startswith("postgresql+asyncpg://")
+
+
+def test_pgvector_extension_available():
+    """Production schema should explicitly enable pgvector extension."""
+    schema_path = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
+    schema_sql = schema_path.read_text(encoding="utf-8")
+
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in schema_sql
