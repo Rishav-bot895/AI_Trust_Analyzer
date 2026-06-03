@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
 	GEMINI_API_KEY: str
 	TAVILY_API_KEY: str
+	ENVIRONMENT: str = "development"
 	DATABASE_URL: str
 	SUPABASE_URL: str
 	SUPABASE_ANON_KEY: str
@@ -19,7 +20,6 @@ class Settings(BaseSettings):
 	SUPABASE_JWT_ISSUER: str | None = None
 	SUPABASE_JWT_AUDIENCE: str | None = None
 	SUPABASE_JWKS_URL: str | None = None
-	ENVIRONMENT: str = "development"
 	ALLOWED_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 	LOG_LEVEL: str = "INFO"
 	MAX_CLAIMS: int = 50
@@ -90,6 +90,16 @@ class Settings(BaseSettings):
 			return [item.strip() for item in raw.split(",") if item.strip()]
 
 		raise ValueError("ALLOWED_ORIGINS must be a list or string")
+
+	@model_validator(mode="after")
+	def validate_database_url_for_runtime(self) -> Settings:
+		"""Require asyncpg runtime URL in development/production environments."""
+		if self.ENVIRONMENT in {"development", "production"}:
+			if not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
+				raise ValueError(
+					"DATABASE_URL must use postgresql+asyncpg:// in development and production"
+				)
+		return self
 
 
 settings = Settings()

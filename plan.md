@@ -87,8 +87,8 @@ Update this section every time a task is completed.
 - [ ] 5.6 Write frontend unit tests for table and panel components
 
 ### Phase 6 - Database and Storage
-- [ ] 6.1 Write production database schema SQL for Supabase
-- [ ] 6.2 Configure Supabase connection for development and production
+- [x] 6.1 Write production database schema SQL for Supabase
+- [x] 6.2 Configure Supabase connection for development and production
 
 ### Phase 7 - Deployment and CI/CD
 - [ ] 7.1 Create Dockerfile for the FastAPI backend
