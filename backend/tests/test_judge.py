@@ -15,10 +15,12 @@ from app.agents import judge
 
 
 class _FakeLLM:
-    def __init__(self, content: str = "Verdict sentence one. Verdict sentence two."):
+    def __init__(self, content: Any = "Verdict sentence one. Verdict sentence two."):
         self.content = content
+        self.calls: list[list[dict[str, str]]] = []
 
     def invoke(self, messages: list[dict[str, str]]):
+        self.calls.append(messages)
         return type("LLMResult", (), {"content": self.content})()
 
 
@@ -211,3 +213,104 @@ def test_judge_timeline_entry_added():
     assert event["agent"] == "judge"
     assert event["started_at"]
     assert event["completed_at"]
+
+
+def test_judge_extracts_verdict_from_structured_content(monkeypatch):
+    fake = _FakeLLM(content=[{"text": "Structured verdict output."}])
+    monkeypatch.setattr(
+        judge,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake,
+    )
+
+    claims = [{"id": "c1", "text": "A", "status": "SUPPORTED"}]
+    result = judge.judge_analysis(_base_state(claims, critique="No logical issues detected."))
+
+    assert result["verdict"] == "Structured verdict output."
+
+
+def test_judge_falls_back_for_non_text_structured_content(monkeypatch):
+    fake = _FakeLLM(content=[{"type": "tool_call", "payload": {"x": 1}}])
+    monkeypatch.setattr(
+        judge,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake,
+    )
+
+    claims = [{"id": "c1", "text": "A", "status": "SUPPORTED"}]
+    result = judge.judge_analysis(_base_state(claims, critique="No logical issues detected."))
+
+    assert isinstance(result["verdict"], str)
+    assert result["verdict"].strip()
+    assert "{" not in result["verdict"]
+    assert "[" not in result["verdict"]
+
+
+def test_judge_prompt_includes_status_and_evidence_aggregates(monkeypatch):
+    fake = _FakeLLM(content="Aggregate-aware verdict.")
+    monkeypatch.setattr(
+        judge,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake,
+    )
+
+    claims = [
+        {"id": "c1", "text": "A", "status": "SUPPORTED"},
+        {"id": "c2", "text": "B", "status": "CONTRADICTED"},
+    ]
+    evidence = [
+        {"id": "e1", "claim_id": "c1", "polarity": "FOR"},
+        {"id": "e2", "claim_id": "c2", "polarity": "AGAINST"},
+    ]
+
+    judge.judge_analysis(_base_state(claims, evidence=evidence, critique="No logical issues detected."))
+
+    user_prompt = fake.calls[0][1]["content"]
+    assert "Claim status counts:" in user_prompt
+    assert "Evidence polarity counts:" in user_prompt
+
+
+def test_judge_enforces_consistency_when_verdict_conflicts(monkeypatch):
+    fake = _FakeLLM(content="There is insufficient evidence to verify these claims.")
+    monkeypatch.setattr(
+        judge,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake,
+    )
+
+    claims = [
+        {"id": "c1", "text": "A", "status": "SUPPORTED"},
+        {"id": "c2", "text": "B", "status": "SUPPORTED"},
+    ]
+    evidence = [
+        {"id": "e1", "claim_id": "c1", "polarity": "FOR"},
+        {"id": "e2", "claim_id": "c2", "polarity": "FOR"},
+    ]
+
+    result = judge.judge_analysis(_base_state(claims, evidence=evidence, critique="No logical issues detected."))
+
+    assert "insufficient evidence" not in result["verdict"].lower()
+
+
+def test_judge_enforces_consistency_for_overly_positive_conflict(monkeypatch):
+    fake = _FakeLLM(content="This answer is highly trustworthy and fully reliable with no issues.")
+    monkeypatch.setattr(
+        judge,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake,
+    )
+
+    claims = [
+        {"id": "c1", "text": "A", "status": "CONTRADICTED"},
+        {"id": "c2", "text": "B", "status": "CONTRADICTED"},
+    ]
+    evidence = [
+        {"id": "e1", "claim_id": "c1", "polarity": "AGAINST"},
+        {"id": "e2", "claim_id": "c2", "polarity": "AGAINST"},
+    ]
+
+    result = judge.judge_analysis(_base_state(claims, evidence=evidence, critique="No logical issues detected."))
+
+    assert "highly trustworthy" not in result["verdict"].lower()
+    assert "fully reliable" not in result["verdict"].lower()
+    assert "contradictory evidence" in result["verdict"].lower()

@@ -137,12 +137,46 @@ def _complete_timeline_event(event: dict[str, str], result: Any) -> None:
     event["output_summary"] = _summarize_state_payload(result)
 
 
-def parse_json_response(content: str) -> dict[str, Any]:
-    """Parse JSON responses and strip optional markdown code fences."""
-    if not isinstance(content, str):
-        raise TypeError("content must be a string")
+def _content_to_text(content: Any) -> str:
+    """Normalize model content to a text payload suitable for JSON parsing."""
+    if isinstance(content, str):
+        return content
 
-    raw = content.strip()
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+        # Some wrappers may already return a parsed JSON object.
+        return json.dumps(content)
+
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                chunks.append(item)
+                continue
+
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    chunks.append(text)
+                continue
+
+            text_attr = getattr(item, "text", None)
+            if isinstance(text_attr, str):
+                chunks.append(text_attr)
+
+        return "\n".join(chunk for chunk in chunks if chunk).strip()
+
+    raise TypeError("content must be a string or structured text parts")
+
+
+def parse_json_response(content: Any) -> dict[str, Any]:
+    """Parse JSON responses and strip optional markdown code fences."""
+    raw = _content_to_text(content).strip()
+    if not raw:
+        raise ValueError("content is empty")
+
     if raw.startswith("```"):
         lines = raw.splitlines()
         if lines and lines[0].startswith("```"):

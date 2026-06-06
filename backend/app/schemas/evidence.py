@@ -26,6 +26,9 @@ class EvidencePolarity(str, Enum):
     AGAINST = "AGAINST"
     """Evidence contradicts the associated claim."""
 
+    UNKNOWN = "UNKNOWN"
+    """Evidence stance cannot be determined confidently."""
+
 
 class EvidenceCreate(BaseModel):
     """Schema for creating evidence before persistence."""

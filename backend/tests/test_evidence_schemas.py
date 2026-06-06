@@ -79,7 +79,7 @@ def test_evidence_source_enum():
 
 def test_evidence_polarity_enum():
     """EvidencePolarity enum exposes expected values."""
-    assert {member.value for member in EvidencePolarity} == {"FOR", "AGAINST"}
+    assert {member.value for member in EvidencePolarity} == {"FOR", "AGAINST", "UNKNOWN"}
 
 
 def test_evidence_polarity_none_allowed():
