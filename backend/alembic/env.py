@@ -26,7 +26,8 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Always source DB URL from application settings.
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# Alembic's config parser treats '%' as interpolation markers, so escape them.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

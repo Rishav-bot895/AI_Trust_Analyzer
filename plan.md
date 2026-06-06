@@ -15,6 +15,39 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - API response/request naming contract must be explicit and uniform end-to-end. Use one canonical wire format (snake_case or camelCase) and enforce deterministic transformations/tests at API boundaries.
 - Supabase authentication validation must be production-safe: verify token signature and claims using Supabase-compatible verification strategy (JWKS/asymmetric support), not only shared-secret HS256 assumptions.
 
+## Major Backend API Endpoints (Postman)
+
+Use base URL: `http://localhost:8000`
+
+### Public / Health
+- `GET /` - Root health check
+- `GET /api/v1/health` - API health check
+
+### Analysis Pipeline
+- `POST /api/v1/analyze` - Submit analysis (returns `id` and `PENDING`)
+- `GET /api/v1/analyze/{analysis_id}` - Poll analysis status and final result
+- `GET /api/v1/analyze/{analysis_id}/claims` - Get claims (optional query: `status`)
+- `GET /api/v1/analyze/{analysis_id}/evidence` - Get evidence (optional query: `claim_id`)
+- `GET /api/v1/analyze/{analysis_id}/timeline` - Get agent timeline events
+- `GET /api/v1/analyze/history` - Authenticated-only history list
+
+### Model Comparison
+- `POST /api/v1/compare` - Run multi-model comparison analysis
+
+### Guest Session Lifecycle
+- `POST /api/v1/guest/session/start` - Create guest session and token
+- `POST /api/v1/guest/session/end` - End guest session and delete guest-owned data
+- `POST /api/v1/guest/cleanup-expired` - Service-role protected TTL cleanup endpoint
+
+### Auth / Session Headers for Postman
+- Authenticated mode:
+  - `Authorization: Bearer <supabase_jwt>`
+- Guest mode:
+  - `X-Guest-Session-Id: <guest_session_id>`
+  - `X-Guest-Session-Token: <guest_session_token>`
+- Service cleanup endpoint:
+  - `X-Service-Role-Key: <supabase_service_role_key>`
+
 ---
 
 ## Completed Tasks Tracker
