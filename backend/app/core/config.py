@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field, field_validator, model_validator
@@ -26,7 +27,10 @@ class Settings(BaseSettings):
 	VECTOR_EMBEDDING_DIM: int = 384
 	GUEST_SESSION_TTL_HOURS: int = 24
 
-	model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+	model_config = SettingsConfigDict(
+		env_file=Path(__file__).resolve().parents[2] / ".env",
+		env_file_encoding="utf-8",
+	)
 
 	@field_validator(
 		"GEMINI_API_KEY",
