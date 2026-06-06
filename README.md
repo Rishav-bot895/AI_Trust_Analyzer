@@ -46,6 +46,8 @@ From the repository root:
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
+Before starting the backend, copy `backend\.env.example` to `backend\.env` and fill in the required values.
+
 Do not use global Python for this project. Use this interpreter for all backend commands:
 
 ```text
@@ -59,9 +61,20 @@ cd frontend
 npm install
 ```
 
-## 5) Run frontend in development mode
+## 5) Start the backend
 
-```bash
+From the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload --port 8000
+```
+
+## 6) Start the frontend
+
+From the `frontend` folder:
+
+```powershell
+cd frontend
 npm run dev
 ```
 
