@@ -29,3 +29,5 @@ class AgentState(TypedDict):
     verdict: str | None
     timeline: list[dict]
     error: str | None
+    verifier_reason_codes: list[str]
+    verifier_metrics: dict

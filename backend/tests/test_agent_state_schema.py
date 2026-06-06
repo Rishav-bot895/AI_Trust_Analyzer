@@ -19,6 +19,8 @@ def test_agent_state_typeddict_keys():
         "verdict",
         "timeline",
         "error",
+        "verifier_reason_codes",
+        "verifier_metrics",
     }
 
     assert set(AgentState.__annotations__.keys()) == expected_keys

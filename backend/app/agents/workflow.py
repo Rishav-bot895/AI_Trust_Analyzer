@@ -148,6 +148,8 @@ def build_initial_state(
         "verdict": None,
         "timeline": [],
         "error": None,
+        "verifier_reason_codes": [],
+        "verifier_metrics": {},
     }
 
 

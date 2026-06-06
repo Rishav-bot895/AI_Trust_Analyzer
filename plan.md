@@ -15,39 +15,6 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - API response/request naming contract must be explicit and uniform end-to-end. Use one canonical wire format (snake_case or camelCase) and enforce deterministic transformations/tests at API boundaries.
 - Supabase authentication validation must be production-safe: verify token signature and claims using Supabase-compatible verification strategy (JWKS/asymmetric support), not only shared-secret HS256 assumptions.
 
-## Major Backend API Endpoints (Postman)
-
-Use base URL: `http://localhost:8000`
-
-### Public / Health
-- `GET /` - Root health check
-- `GET /api/v1/health` - API health check
-
-### Analysis Pipeline
-- `POST /api/v1/analyze` - Submit analysis (returns `id` and `PENDING`)
-- `GET /api/v1/analyze/{analysis_id}` - Poll analysis status and final result
-- `GET /api/v1/analyze/{analysis_id}/claims` - Get claims (optional query: `status`)
-- `GET /api/v1/analyze/{analysis_id}/evidence` - Get evidence (optional query: `claim_id`)
-- `GET /api/v1/analyze/{analysis_id}/timeline` - Get agent timeline events
-- `GET /api/v1/analyze/history` - Authenticated-only history list
-
-### Model Comparison
-- `POST /api/v1/compare` - Run multi-model comparison analysis
-
-### Guest Session Lifecycle
-- `POST /api/v1/guest/session/start` - Create guest session and token
-- `POST /api/v1/guest/session/end` - End guest session and delete guest-owned data
-- `POST /api/v1/guest/cleanup-expired` - Service-role protected TTL cleanup endpoint
-
-### Auth / Session Headers for Postman
-- Authenticated mode:
-  - `Authorization: Bearer <supabase_jwt>`
-- Guest mode:
-  - `X-Guest-Session-Id: <guest_session_id>`
-  - `X-Guest-Session-Token: <guest_session_token>`
-- Service cleanup endpoint:
-  - `X-Service-Role-Key: <supabase_service_role_key>`
-
 ---
 
 ## Completed Tasks Tracker
@@ -1847,101 +1814,339 @@ Update this section every time a task is completed.
 
 These tasks correct already-completed legacy items so the implementation matches the updated architecture.
 
-### C.1 — Replace ChromaDB dependency and runtime usage with pgvector
-**Applies to completed tasks**: 1.3, 1.10, 2.5  
-**Files**: `requirements.txt`, `backend/app/db/vector_store.py`, `backend/app/agents/retriever.py`, relevant tests  
-**Scope**:
-- Remove `chromadb` usage from code and imports
-- Add/verify `pgvector`, `psycopg[binary]`, and Supabase-compatible dependencies
-- Update retriever vector evidence `source_type` to `PGVECTOR`
+These tasks capture the required remediation for contradictory verifier/judge outputs observed in production-like runs.
 
-### C.2 — Retrofit settings and env contract for Supabase + guest retention
-**Applies to completed tasks**: 1.2  
-**Files**: `backend/app/core/config.py`, `.env.example`, tests  
-**Scope**:
-- Add required Supabase settings and validation
-- Add guest-session retention settings (`GUEST_SESSION_TTL_HOURS`)
-- Remove deprecated Chroma-specific settings
+### A) Root Cause Hardening Tasks
+- [x] A.1 Add explicit verifier failure taxonomy and structured error reason codes (`parse_failure`, `schema_mismatch`, `no_evidence`, `low_signal`) in state and logs.
+- [x] A.2 Persist per-claim debug metadata for decision traceability (raw verdict source, fallback reason, polarity source).
+- [x] A.3 Add contradiction detection metrics to monitoring (e.g., `supported_with_all_against_polarity_count`).
 
-### C.3 — Add migration for pgvector extension and embedding table
-**Applies to completed tasks**: 1.9, 1.10  
-**Files**: `backend/alembic/versions/*.py`, `backend/db/schema.sql`  
-**Scope**:
-- Create Alembic revision enabling vector extension
-- Add `evidence_embeddings` and vector index
-- Ensure downgrade path safely drops vector artifacts
+### B) Concrete Code-Level Fix Tasks
+- [x] B.1 Update verifier response normalization to robustly handle string, dict, list-of-parts, and object-like content before JSON parsing.
+- [x] B.2 Remove polarity fallback bias: do not default `UNVERIFIABLE` claims to `AGAINST`; use neutral/unknown polarity when stance is unresolved.
+- [x] B.3 Add deterministic sanity checks for polarity assignment (rule-based support/contradiction cues) before persisting evidence polarity.
+- [x] B.4 Enforce claim-status guardrails so strong, high-authority support cannot end as `UNVERIFIABLE` without explicit contradiction.
+- [x] B.5 Update judge verdict parsing to extract text from structured model outputs instead of raw `str(content)` coercion.
+- [x] B.6 Make judge verdict generation consume explicit claim/evidence aggregates (status counts, support vs contradiction totals).
 
-### C.4 — Retrofit evidence schema source type and contracts
-**Applies to completed tasks**: 1.5, 4.3  
-**Files**: `backend/app/schemas/evidence.py`, `frontend/src/types/api.ts`, tests  
-**Scope**:
-- Replace `VECTOR_STORE` contract usage with `PGVECTOR`
-- Update any validation and serialization tests
+### C) Revised Decision Logic Tasks
+- [x] C.1 Implement three-way evidence polarity classification (`FOR`, `AGAINST`, `UNKNOWN`) with confidence-aware fallback.
+- [x] C.2 Implement weighted claim verification aggregation per claim:
+  - weighted support score from relevance, source authority, and directness
+  - weighted contradiction score from the same factors
+- [x] C.3 Define deterministic status thresholds for `SUPPORTED`, `PARTIALLY_SUPPORTED`, `CONTRADICTED`, `UNSUPPORTED`, `UNVERIFIABLE`.
+- [x] C.4 Replace flat confidence fallback with calibrated confidence formula using agreement, authority, directness, and contradiction penalty.
+- [x] C.5 Add hard consistency constraints before final verdict text is produced (verdict cannot contradict aggregate status distribution).
 
-### C.5 — Add ownership-aware data model fields and repository guards
-**Applies to completed tasks**: 1.8, 3.x scaffolding  
-**Files**: `backend/app/db/models.py`, `backend/app/db/repository.py`, migrations, route dependencies  
-**Scope**:
-- Add `user_id`, `guest_session_id`, and `is_guest` ownership markers
-- Implement requester-scoped fetch/update methods
-- Prevent cross-user and cross-session data access
+### D) Corrected Output Validation Tasks
+- [x] D.1 Add golden-output fixtures for known factual examples (including Apollo mission case) with expected claim statuses and polarities.
+- [x] D.2 Create regression assertion set for corrected outcome targets:
+  - supportive sources map to `FOR`
+  - claims with strong support are not `UNVERIFIABLE`
+  - trust score/risk align with aggregate claim outcomes
+- [x] D.3 Add API snapshot contract tests to ensure output fields remain stable and human-readable.
 
-### C.6 — Implement guest data deletion lifecycle
-**Applies to completed tasks**: 3.x, 4.x scaffolding  
-**Files**: backend cleanup endpoint/job, frontend session handling, tests  
-**Scope**:
-- Issue server-signed guest session credentials and require them for guest cleanup actions
-- Delete guest data on explicit session end signal
-- Add TTL-based cleanup as fallback for abandoned sessions
-- Verify claims/evidence/timeline/history are removed for guest session
+### E) Unit and Integration Test Tasks
+- [x] E.1 Add verifier unit tests for structured model content parsing (string/dict/list/object variants).
+- [x] E.2 Add verifier unit tests for neutral fallback polarity on unresolved verdicts.
+- [x] E.3 Add verifier unit tests for "strong support cannot become UNVERIFIABLE" invariant.
+- [x] E.4 Add judge unit tests for structured verdict extraction and anti-garbage text handling.
+- [x] E.5 Add judge/verifier consistency tests preventing score/verdict contradictions.
+- [x] E.6 Add end-to-end workflow regression tests reproducing previous failure and asserting corrected behavior.
+- [x] E.7 Run targeted test suite with repository interpreter policy:
+  - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_verifier.py -q`
+  - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_judge.py -q`
+  - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_workflow.py -q`
 
-### C.7 — Add history capability for authenticated users only
-**Applies to completed tasks**: 3.x, 4.x scaffolding  
-**Files**: analysis/history endpoints, frontend history view components/hooks, tests  
-**Scope**:
-- Add authenticated history list endpoint and UI rendering
-- Derive authenticated ownership from verified Supabase JWT (not client-supplied user-id header)
-- Ensure guests cannot view or request historical analyses beyond active session
-- Add unit and integration tests for both access modes
+### F) Guardrails and Future Prevention Tasks
+- [ ] F.1 Add pre-persist consistency validator to block contradictory states (for example, `SUPPORTED` with only `AGAINST` evidence).
+- [ ] F.2 Add post-judge validation to reject verdict text that conflicts with status distribution and trigger controlled regeneration.
+- [ ] F.3 Add release gate canary suite with fixed factual benchmark prompts and invariants.
+- [ ] F.4 Add observability dashboards/alerts for contradiction ratios, fallback usage, and parse failure rates.
+- [ ] F.5 Document decision-policy contract in backend docs and keep test matrix aligned with policy changes.
 
-### C.8 — Harden Supabase JWT verification strategy (production-safe)
-**Applies to completed tasks**: C.5, C.7
-**Files**: `backend/app/api/dependencies.py`, auth config/docs, tests
-**Scope**:
-- Implement Supabase-compatible token verification supporting asymmetric/JWKS validation and strict claim checks (`exp`, `sub`, issuer/audience as configured)
-- Keep shared-secret HS256 path only as an explicit development fallback
-- Add negative tests for invalid signature, wrong issuer/audience, expired token
+### Execution Order for Correction Tasks
+- [ ] G.1 Implement B.1-B.6 first (parser, polarity, claim-status, judge parsing).
+- [x] G.2 Implement C.1-C.5 next (decision logic + confidence calibration).
+- [x] G.3 Implement E.1-E.6 and run E.7 test commands.
+- [ ] G.4 Implement F.1-F.5 guardrails and canary release checks.
+- [ ] G.5 Re-run full backend test suite and mark this section complete only after all invariants pass.
 
-### C.9 — Normalize API field naming contract end-to-end
-**Applies to completed tasks**: 1.4, 1.5, 1.6, 4.3, 4.4
-**Files**: backend schemas/serializers, frontend API client/types, tests
-**Scope**:
-- Choose one canonical wire naming convention and codify it in backend responses and OpenAPI
-- Remove mixed per-endpoint casing transformations
-- Add contract tests to ensure analyze/poll/claims/evidence/timeline/compare all follow the same naming convention
 
-### C.10 — Retrofit timeline and session schema fidelity
-**Applies to completed tasks**: 1.8, 1.9, 6.1
-**Files**: `backend/app/db/models.py`, migrations, `backend/db/schema.sql`, repository/tests
-**Scope**:
-- Add missing `chat_sessions` model/table and ownership linkage
-- Store `analyses.timeline` as structured JSON/JSONB consistently across ORM, migrations, and SQL schema
-- Align embedding schema types with production constraints (UUID FK for `evidence_embeddings.evidence_id`)
+---
 
-### C.11 — Align runtime defaults and config wiring with architecture
-**Applies to completed tasks**: 1.1, 1.2, 1.6
-**Files**: `backend/app/main.py`, `backend/app/core/config.py`, `backend/app/schemas/analysis.py`, tests
-**Scope**:
-- Ensure default analysis model is `gemini-3.1-flash-lite` across schema and runtime
-- Wire CORS to `ALLOWED_ORIGINS` settings instead of hardcoded values
-- Add regression tests for model default and CORS-config-driven behavior
+## Backend API Endpoints Reference (Postman)
 
-**Planned file areas** (some already exist):
-- `backend/app/schemas/` (5 files)
-- `backend/app/agents/` (7 files: base, claim_extractor, retriever, verifier, critic, judge, workflow)
-- `backend/app/db/` (4 files: models, session, vector_store, repository)
-- `backend/app/api/routes/` (3 files: analysis, comparison, health)
-- `backend/alembic/` (full Alembic setup)
-- `backend/tests/` (conftest + integration tests)
-- `frontend/src/types/`, `frontend/src/lib/`, `frontend/src/hooks/`, `frontend/src/components/`
-- Docker, CI, and deployment files
+Base URL: http://localhost:8000
+
+Common header modes:
+- Authenticated mode:
+  - Authorization: Bearer <supabase_jwt>
+- Guest mode:
+  - X-Guest-Session-Id: <guest_session_id>
+  - X-Guest-Session-Token: <guest_session_token>
+- Service cleanup endpoint only:
+  - X-Service-Role-Key: <supabase_service_role_key>
+
+### 1) GET /
+Purpose: Root health check.
+
+Sample request body:
+- None
+
+Sample output:
+{
+  "status": "ok"
+}
+
+### 2) GET /api/v1/health
+Purpose: API readiness check.
+
+Sample request body:
+- None
+
+Sample output:
+{
+  "status": "ok"
+}
+
+### 3) POST /api/v1/guest/session/start
+Purpose: Start guest session and receive signed session token.
+
+Sample request body:
+{}
+
+Sample output:
+{
+  "guest_session_id": "e0d0f8da-1d13-46f0-bce2-6f76a5f51445",
+  "guest_session_token": "signed_guest_token_value"
+}
+
+### 4) POST /api/v1/analyze
+Purpose: Submit analysis request (async background run).
+
+Sample request body:
+{
+  "prompt": "Explain the Apollo program",
+  "response": "Apollo 11 landed on the Moon in 1969 and returned safely.",
+  "model_name": "gemini-3.1-flash-lite",
+  "include_comparison": false
+}
+
+Sample output:
+{
+  "id": "524a0316-08f4-4f83-8dc4-2b9ce36e42fd",
+  "status": "PENDING"
+}
+
+### 5) GET /api/v1/analyze/{analysis_id}
+Purpose: Poll analysis status and fetch full result when completed.
+
+Sample request body:
+- None
+
+Sample output (completed):
+{
+  "id": "524a0316-08f4-4f83-8dc4-2b9ce36e42fd",
+  "status": "COMPLETED",
+  "trust_score": 78.0,
+  "hallucination_risk": "MEDIUM",
+  "claims": [
+    {
+      "id": "0d8ce09f-7bf3-4cf8-b7ab-f6426bd8b4f6",
+      "text": "Apollo 11 landed on the Moon in 1969.",
+      "confidence": 0.92,
+      "status": "SUPPORTED",
+      "claim_index": 0,
+      "source_span": null
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ae7fe0fa-e49d-4e67-b173-56ec0bb8f77d",
+      "claim_id": "0d8ce09f-7bf3-4cf8-b7ab-f6426bd8b4f6",
+      "snippet": "NASA confirms Apollo 11 landed in July 1969.",
+      "source_url": "https://www.nasa.gov/mission/apollo-11/",
+      "source_title": "Apollo 11 - NASA",
+      "relevance_score": 0.96,
+      "source_type": "WEB_SEARCH",
+      "polarity": "FOR",
+      "retrieved_at": "2026-06-06T10:14:00Z"
+    }
+  ],
+  "critique": "## Logical Issues\nNo logical issues detected.",
+  "verdict": "The response is mostly trustworthy with strong factual support.",
+  "created_at": "2026-06-06T10:13:00Z",
+  "completed_at": "2026-06-06T10:14:08Z",
+  "error": null
+}
+
+### 6) GET /api/v1/analyze/{analysis_id}/claims
+Purpose: Fetch claims, optional filtering by status query parameter.
+
+Sample request body:
+- None
+
+Sample output:
+[
+  {
+    "id": "0d8ce09f-7bf3-4cf8-b7ab-f6426bd8b4f6",
+    "text": "Apollo 11 landed on the Moon in 1969.",
+    "confidence": 0.92,
+    "status": "SUPPORTED",
+    "claim_index": 0,
+    "source_span": null
+  },
+  {
+    "id": "fbc82e94-8bf3-40f2-a16e-1f3fd521e3ef",
+    "text": "Apollo 13 landed on Mars.",
+    "confidence": 0.95,
+    "status": "CONTRADICTED",
+    "claim_index": 1,
+    "source_span": null
+  }
+]
+
+### 7) GET /api/v1/analyze/{analysis_id}/evidence
+Purpose: Fetch evidence, optional filtering by claim_id query parameter.
+
+Sample request body:
+- None
+
+Sample output:
+[
+  {
+    "id": "ae7fe0fa-e49d-4e67-b173-56ec0bb8f77d",
+    "claim_id": "0d8ce09f-7bf3-4cf8-b7ab-f6426bd8b4f6",
+    "snippet": "NASA confirms Apollo 11 landed in July 1969.",
+    "source_url": "https://www.nasa.gov/mission/apollo-11/",
+    "source_title": "Apollo 11 - NASA",
+    "relevance_score": 0.96,
+    "source_type": "WEB_SEARCH",
+    "polarity": "FOR",
+    "retrieved_at": "2026-06-06T10:14:00Z"
+  },
+  {
+    "id": "6e9953d6-08de-4f6a-9ac5-a81db5868d24",
+    "claim_id": "fbc82e94-8bf3-40f2-a16e-1f3fd521e3ef",
+    "snippet": "Apollo 13 did not land on any planetary body.",
+    "source_url": "https://www.britannica.com/topic/Apollo-13",
+    "source_title": "Apollo 13",
+    "relevance_score": 0.88,
+    "source_type": "WEB_SEARCH",
+    "polarity": "AGAINST",
+    "retrieved_at": "2026-06-06T10:14:03Z"
+  }
+]
+
+### 8) GET /api/v1/analyze/{analysis_id}/timeline
+Purpose: Fetch ordered agent execution timeline.
+
+Sample request body:
+- None
+
+Sample output:
+[
+  {
+    "agent": "claim_extractor",
+    "started_at": "2026-06-06T10:13:01Z",
+    "completed_at": "2026-06-06T10:13:10Z",
+    "input_summary": "response text received",
+    "output_summary": "2 claims extracted"
+  },
+  {
+    "agent": "retriever",
+    "started_at": "2026-06-06T10:13:10Z",
+    "completed_at": "2026-06-06T10:13:35Z",
+    "input_summary": "2 claims",
+    "output_summary": "6 evidence items"
+  }
+]
+
+### 9) GET /api/v1/analyze/history
+Purpose: Authenticated-only list of previous analyses.
+
+Sample request body:
+- None
+
+Sample output:
+[
+  {
+    "id": "524a0316-08f4-4f83-8dc4-2b9ce36e42fd",
+    "status": "COMPLETED",
+    "trust_score": 78.0,
+    "hallucination_risk": "MEDIUM",
+    "created_at": "2026-06-06T10:13:00Z",
+    "completed_at": "2026-06-06T10:14:08Z",
+    "error": null
+  }
+]
+
+### 10) POST /api/v1/compare
+Purpose: Run comparison across one or more models synchronously.
+
+Sample request body:
+{
+  "prompt": "Explain the Apollo program",
+  "response": "Apollo 11 landed on the Moon in 1969 and returned safely.",
+  "models": [
+    "gemini-3.1-flash-lite",
+    "gemini-2.0-flash"
+  ]
+}
+
+Sample output:
+{
+  "analyses": [
+    {
+      "id": "be65ff32-f86f-4f2d-a2c1-0f71dbfdbfae",
+      "status": "COMPLETED",
+      "trust_score": 81.0,
+      "hallucination_risk": "LOW",
+      "claims": [],
+      "evidence": [],
+      "critique": "No logical issues detected.",
+      "verdict": "High confidence factual response.",
+      "created_at": "2026-06-06T11:00:00Z",
+      "completed_at": "2026-06-06T11:00:06Z",
+      "error": null
+    },
+    {
+      "id": "56fcd9b5-8a0b-4a0f-a73e-2cb8f969e7b9",
+      "status": "FAILED",
+      "trust_score": null,
+      "hallucination_risk": null,
+      "claims": [],
+      "evidence": [],
+      "critique": null,
+      "verdict": null,
+      "created_at": "2026-06-06T11:00:00Z",
+      "completed_at": "2026-06-06T11:00:08Z",
+      "error": "Model call failed"
+    }
+  ]
+}
+
+### 11) POST /api/v1/guest/session/end
+Purpose: Explicitly end guest session and delete guest-owned rows.
+
+Sample request body:
+{
+  "guest_session_id": "e0d0f8da-1d13-46f0-bce2-6f76a5f51445"
+}
+
+Sample output:
+{
+  "deleted_analyses": 3
+}
+
+### 12) POST /api/v1/guest/cleanup-expired
+Purpose: TTL cleanup for expired guest sessions (service-role protected).
+
+Sample request body:
+{}
+
+Sample output:
+{
+  "deleted_analyses": 17
+}

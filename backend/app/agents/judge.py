@@ -16,6 +16,36 @@ _STATUS_WEIGHTS: dict[str, float] = {
 }
 
 
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text.strip()
+        return ""
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                chunks.append(item)
+                continue
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    chunks.append(text)
+                continue
+            text_attr = getattr(item, "text", None)
+            if isinstance(text_attr, str):
+                chunks.append(text_attr)
+        return "\n".join(chunk.strip() for chunk in chunks if chunk and chunk.strip()).strip()
+
+    text_attr = getattr(content, "text", None)
+    if isinstance(text_attr, str):
+        return text_attr.strip()
+    return ""
+
+
 def _extract_verified_claims(state: AgentState) -> list[dict[str, Any]]:
     claims = state.get("verified_claims") or state.get("claims") or []
     return [claim for claim in claims if isinstance(claim, dict)]
@@ -136,6 +166,45 @@ def _top_issues_from_critique(critique: str | None) -> list[str]:
     return issues
 
 
+def _aggregate_verification_context(
+    claims: list[dict[str, Any]],
+    evidence_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    status_counts: dict[str, int] = {
+        ClaimStatus.SUPPORTED.value: 0,
+        ClaimStatus.PARTIALLY_SUPPORTED.value: 0,
+        ClaimStatus.CONTRADICTED.value: 0,
+        ClaimStatus.UNSUPPORTED.value: 0,
+        ClaimStatus.UNVERIFIABLE.value: 0,
+    }
+    for claim in claims:
+        status = str(claim.get("status") or ClaimStatus.UNVERIFIABLE.value).strip().upper()
+        if status not in status_counts:
+            status = ClaimStatus.UNVERIFIABLE.value
+        status_counts[status] += 1
+
+    for_count = 0
+    against_count = 0
+    unknown_count = 0
+    for item in evidence_items:
+        polarity = str(item.get("polarity") or "").strip().upper()
+        if polarity == "FOR":
+            for_count += 1
+        elif polarity == "AGAINST":
+            against_count += 1
+        else:
+            unknown_count += 1
+
+    return {
+        "status_counts": status_counts,
+        "evidence_counts": {
+            "for": for_count,
+            "against": against_count,
+            "unknown": unknown_count,
+        },
+    }
+
+
 def _fallback_verdict(score: int, risk: str, issues: list[str]) -> str:
     if issues:
         return (
@@ -148,14 +217,65 @@ def _fallback_verdict(score: int, risk: str, issues: list[str]) -> str:
     )
 
 
-def _generate_verdict(score: int, risk: str, issues: list[str], model_name: str) -> str:
+def _enforce_verdict_consistency(
+    verdict: str,
+    score: int,
+    risk: str,
+    aggregates: dict[str, Any],
+) -> str:
+    status_counts = aggregates.get("status_counts") or {}
+    evidence_counts = aggregates.get("evidence_counts") or {}
+    supported_like = int(status_counts.get(ClaimStatus.SUPPORTED.value, 0)) + int(
+        status_counts.get(ClaimStatus.PARTIALLY_SUPPORTED.value, 0)
+    )
+    contradicted_like = int(status_counts.get(ClaimStatus.CONTRADICTED.value, 0))
+    unresolved_like = int(status_counts.get(ClaimStatus.UNSUPPORTED.value, 0)) + int(
+        status_counts.get(ClaimStatus.UNVERIFIABLE.value, 0)
+    )
+    for_count = int(evidence_counts.get("for", 0))
+    against_count = int(evidence_counts.get("against", 0))
+
+    lowered = verdict.lower()
+    uncertain_phrases = ("insufficient", "cannot verify", "unverifiable", "not enough evidence")
+    overpositive_phrases = ("highly trustworthy", "strongly supported", "fully reliable", "no issues")
+
+    if supported_like > (contradicted_like + unresolved_like) and for_count >= against_count:
+        if any(phrase in lowered for phrase in uncertain_phrases):
+            return (
+                f"Trust score is {score}/100 with {risk} hallucination risk. "
+                "Most claims are supported by available evidence, with limited contradictory signals."
+            )
+
+    if contradicted_like > supported_like and against_count > for_count:
+        if any(phrase in lowered for phrase in overpositive_phrases):
+            return (
+                f"Trust score is {score}/100 with {risk} hallucination risk. "
+                "Contradictory evidence outweighs support across the analyzed claims."
+            )
+
+    return verdict
+
+
+def _generate_verdict(
+    score: int,
+    risk: str,
+    issues: list[str],
+    aggregates: dict[str, Any],
+    model_name: str,
+) -> str:
+    status_counts = aggregates.get("status_counts") or {}
+    evidence_counts = aggregates.get("evidence_counts") or {}
     issue_context = "\n".join(f"- {item}" for item in issues) if issues else "- none"
     prompt = "\n".join(
         [
             f"Trust score: {score}",
             f"Hallucination risk: {risk}",
+            f"Claim status counts: {status_counts}",
+            f"Evidence polarity counts: {evidence_counts}",
             "Top issues:",
             issue_context,
+            "Constraints: Ensure verdict aligns with status and evidence counts.",
+            "If SUPPORTED dominates and AGAINST is low, do not claim insufficient information.",
             "Write a concise verdict in 1-3 sentences.",
         ]
     )
@@ -175,7 +295,7 @@ def _generate_verdict(score: int, risk: str, issues: list[str], model_name: str)
             ]
         )
         content = getattr(response, "content", response)
-        verdict = str(content).strip()
+        verdict = _content_to_text(content)
         if verdict:
             return verdict
     except Exception:
@@ -197,9 +317,11 @@ def judge_analysis(state: AgentState) -> AgentState:
     rounded_score = _clamp_score(score)
     risk = _risk_from_score(rounded_score)
     issues = _top_issues_from_critique(state.get("critique"))
+    aggregates = _aggregate_verification_context(claims, evidence_items)
     model_name = str(state.get("model_name") or "gemini-3.1-flash-lite")
 
     state["trust_score"] = float(rounded_score)
     state["hallucination_risk"] = risk
-    state["verdict"] = _generate_verdict(rounded_score, risk, issues, model_name)
+    generated_verdict = _generate_verdict(rounded_score, risk, issues, aggregates, model_name)
+    state["verdict"] = _enforce_verdict_consistency(generated_verdict, rounded_score, risk, aggregates)
     return state

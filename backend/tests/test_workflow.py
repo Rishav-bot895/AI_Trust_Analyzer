@@ -11,6 +11,8 @@ os.environ.setdefault("TAVILY_API_KEY", "test-tavily-key")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
 from app.agents import workflow
+from app.agents import judge as judge_agent
+from app.agents import verifier as verifier_agent
 
 
 def _base_state() -> dict[str, Any]:
@@ -28,6 +30,8 @@ def _base_state() -> dict[str, Any]:
         "verdict": None,
         "timeline": [],
         "error": None,
+        "verifier_reason_codes": [],
+        "verifier_metrics": {},
     }
 
 
@@ -249,3 +253,90 @@ def test_run_analysis_id_preserved(monkeypatch):
 
     assert result["analysis_id"] == "analysis-xyz"
     assert result["verdict"] == "Final verdict"
+
+
+def test_workflow_regression_prevents_supported_claims_with_uncertain_verdict(monkeypatch):
+    class _VerifierFakeLLM:
+        def invoke(self, messages: list[dict[str, str]]):
+            return type(
+                "LLMResult",
+                (),
+                {
+                    "content": '{"verdict":"UNVERIFIABLE","confidence":0.2,"evidence_polarities":["FOR","FOR"]}'
+                },
+            )()
+
+    class _JudgeFakeLLM:
+        def invoke(self, messages: list[dict[str, str]]):
+            return type(
+                "LLMResult",
+                (),
+                {"content": "There is insufficient evidence to verify this response."},
+            )()
+
+    monkeypatch.setattr(
+        verifier_agent,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: _VerifierFakeLLM(),
+    )
+    monkeypatch.setattr(
+        judge_agent,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: _JudgeFakeLLM(),
+    )
+
+    def _extractor(state: dict[str, Any]):
+        state["claims"] = [
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "text": "Apollo 11 landed on the Moon in 1969",
+                "confidence": 0.3,
+                "claim_index": 0,
+            }
+        ]
+        return state
+
+    def _retriever(state: dict[str, Any]):
+        state["evidence"] = [
+            {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "claim_id": "11111111-1111-1111-1111-111111111111",
+                "snippet": "NASA confirms Apollo 11 landed on the Moon in 1969.",
+                "source_url": "https://www.nasa.gov/mission/apollo-11/",
+                "source_title": "Apollo 11 - NASA",
+                "relevance_score": 0.95,
+                "source_type": "WEB_SEARCH",
+                "polarity": None,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            },
+            {
+                "id": "33333333-3333-3333-3333-333333333333",
+                "claim_id": "11111111-1111-1111-1111-111111111111",
+                "snippet": "Mission archives document the successful moon landing.",
+                "source_url": "https://history.nasa.gov/ap11ann/introduction.htm",
+                "source_title": "Apollo 11 archive",
+                "relevance_score": 0.9,
+                "source_type": "WEB_SEARCH",
+                "polarity": None,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            },
+        ]
+        return state
+
+    def _critic(state: dict[str, Any]):
+        state["critique"] = "No logical issues detected."
+        return state
+
+    monkeypatch.setattr(workflow, "extractor", _extractor)
+    monkeypatch.setattr(workflow, "retriever_node", _retriever)
+    monkeypatch.setattr(workflow, "verifier_node", getattr(verifier_agent.verify_claims, "__wrapped__", verifier_agent.verify_claims))
+    monkeypatch.setattr(workflow, "critic_node", _critic)
+    monkeypatch.setattr(workflow, "judge_node", getattr(judge_agent.judge_analysis, "__wrapped__", judge_agent.judge_analysis))
+
+    result = workflow.workflow.invoke(_base_state())
+
+    assert result["claims"][0]["status"] in {"SUPPORTED", "PARTIALLY_SUPPORTED"}
+    assert result["claims"][0]["status"] != "UNVERIFIABLE"
+    assert result["trust_score"] >= 80
+    assert "insufficient evidence" not in result["verdict"].lower()
+    assert len(result["timeline"]) == 5
