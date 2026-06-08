@@ -15,6 +15,7 @@ from app.agents.base import (
 from app.schemas.agent_state import AgentState
 from app.schemas.claim import ClaimStatus
 from app.schemas.evidence import EvidencePolarity
+from app.services.policy_guardrails import build_policy_observability_snapshot
 
 
 logger = logging.getLogger(__name__)
@@ -606,13 +607,28 @@ def verify_claims(state: AgentState) -> AgentState:
 		):
 			contradicted_with_all_for += 1
 
+	reason_codes = sorted(reason_code_counts.keys())
 	metrics = {
 		"total_claims": len(verified_claims),
 		"supported_with_all_against_polarity_count": supported_with_all_against,
 		"contradicted_with_all_for_polarity_count": contradicted_with_all_for,
 	}
-	state["verifier_reason_codes"] = sorted(reason_code_counts.keys())
+	metrics.update(
+		build_policy_observability_snapshot(
+			claims=verified_claims,
+			evidence_items=normalized_evidence,
+			reason_codes=reason_codes,
+		)
+	)
+	state["verifier_reason_codes"] = reason_codes
 	state["verifier_metrics"] = metrics
+	if metrics.get("alerts"):
+		logger.warning(
+			"verifier_policy_alerts analysis_id=%s alerts=%s metrics=%s",
+			state.get("analysis_id"),
+			metrics["alerts"],
+			metrics,
+		)
 	logger.info(
 		"verifier_monitoring_metrics analysis_id=%s reason_codes=%s metrics=%s",
 		state.get("analysis_id"),

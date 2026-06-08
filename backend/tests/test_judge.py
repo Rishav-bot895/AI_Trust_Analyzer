@@ -21,7 +21,12 @@ class _FakeLLM:
 
     def invoke(self, messages: list[dict[str, str]]):
         self.calls.append(messages)
-        return type("LLMResult", (), {"content": self.content})()
+        if isinstance(self.content, list):
+            index = min(len(self.calls) - 1, len(self.content) - 1)
+            content = self.content[index]
+        else:
+            content = self.content
+        return type("LLMResult", (), {"content": content})()
 
 
 @pytest.fixture(autouse=True)
@@ -314,3 +319,32 @@ def test_judge_enforces_consistency_for_overly_positive_conflict(monkeypatch):
     assert "highly trustworthy" not in result["verdict"].lower()
     assert "fully reliable" not in result["verdict"].lower()
     assert "contradictory evidence" in result["verdict"].lower()
+
+
+def test_judge_regenerates_conflicting_verdict_before_fallback(monkeypatch):
+    fake = _FakeLLM(
+        content=[
+            "There is insufficient evidence to verify these claims.",
+            "Most claims are supported by available evidence, with limited contradictory signals.",
+        ]
+    )
+    monkeypatch.setattr(
+        judge,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake,
+    )
+
+    claims = [
+        {"id": "c1", "text": "A", "status": "SUPPORTED"},
+        {"id": "c2", "text": "B", "status": "SUPPORTED"},
+    ]
+    evidence = [
+        {"id": "e1", "claim_id": "c1", "polarity": "FOR"},
+        {"id": "e2", "claim_id": "c2", "polarity": "FOR"},
+    ]
+
+    result = judge.judge_analysis(_base_state(claims, evidence=evidence, critique="No logical issues detected."))
+
+    assert len(fake.calls) == 2
+    assert "insufficient evidence" not in result["verdict"].lower()
+    assert "supported by available evidence" in result["verdict"].lower()

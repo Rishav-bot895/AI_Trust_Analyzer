@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.db.models import Analysis, Claim, Evidence
 from app.schemas.agent_state import AgentState
 from app.schemas.analysis import AnalysisRequest
+from app.services.policy_guardrails import assert_persistable_analysis_state
 
 
 @dataclass(frozen=True)
@@ -274,6 +275,7 @@ class AnalysisRepository:
         state: AgentState,
     ) -> Analysis | None:
         """Persist final workflow state, including claims/evidence and timeline."""
+        assert_persistable_analysis_state(state)
         analysis = await self.get_analysis_for_requester(analysis_id, owner)
         if analysis is None:
             return None

@@ -9,6 +9,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.workflow import run_analysis
@@ -76,7 +77,33 @@ async def _run_analysis_in_background(
             await db.commit()
             return
 
-        await repository.update_analysis_result(analysis_id, owner, state)
+        try:
+            await repository.update_analysis_result(analysis_id, owner, state)
+        except ValueError as exc:
+            logger.warning(
+                "Analysis state rejected before persistence for %s: %s",
+                analysis_id,
+                exc,
+            )
+            await repository.update_analysis_result(
+                analysis_id,
+                owner,
+                {
+                    "analysis_id": analysis_id,
+                    "prompt": prompt,
+                    "response": response,
+                    "model_name": model_name,
+                    "claims": [],
+                    "evidence": [],
+                    "verified_claims": [],
+                    "critique": None,
+                    "trust_score": None,
+                    "hallucination_risk": "UNKNOWN",
+                    "verdict": None,
+                    "timeline": state.get("timeline") or [],
+                    "error": str(exc),
+                },
+            )
         await db.commit()
 
 
@@ -216,10 +243,10 @@ async def get_analysis_claims(
         try:
             claim_status = ClaimStatus(status_filter)
         except ValueError as exc:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid claim status: {status_filter}",
-            ) from exc
+                content={"detail": f"Invalid claim status: {status_filter}"},
+            )
 
     claims = await repository.get_claims(
         analysis_id,

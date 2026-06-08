@@ -1859,18 +1859,18 @@ These tasks capture the required remediation for contradictory verifier/judge ou
   - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_workflow.py -q`
 
 ### F) Guardrails and Future Prevention Tasks
-- [ ] F.1 Add pre-persist consistency validator to block contradictory states (for example, `SUPPORTED` with only `AGAINST` evidence).
-- [ ] F.2 Add post-judge validation to reject verdict text that conflicts with status distribution and trigger controlled regeneration.
-- [ ] F.3 Add release gate canary suite with fixed factual benchmark prompts and invariants.
-- [ ] F.4 Add observability dashboards/alerts for contradiction ratios, fallback usage, and parse failure rates.
-- [ ] F.5 Document decision-policy contract in backend docs and keep test matrix aligned with policy changes.
+- [x] F.1 Add pre-persist consistency validator to block contradictory states (for example, `SUPPORTED` with only `AGAINST` evidence).
+- [x] F.2 Add post-judge validation to reject verdict text that conflicts with status distribution and trigger controlled regeneration.
+- [x] F.3 Add release gate canary suite with fixed factual benchmark prompts and invariants.
+- [x] F.4 Add observability dashboards/alerts for contradiction ratios, fallback usage, and parse failure rates.
+- [x] F.5 Document decision-policy contract in backend docs and keep test matrix aligned with policy changes.
 
 ### Execution Order for Correction Tasks
-- [ ] G.1 Implement B.1-B.6 first (parser, polarity, claim-status, judge parsing).
+- [x] G.1 Implement B.1-B.6 first (parser, polarity, claim-status, judge parsing).
 - [x] G.2 Implement C.1-C.5 next (decision logic + confidence calibration).
 - [x] G.3 Implement E.1-E.6 and run E.7 test commands.
-- [ ] G.4 Implement F.1-F.5 guardrails and canary release checks.
-- [ ] G.5 Re-run full backend test suite and mark this section complete only after all invariants pass.
+- [x] G.4 Implement F.1-F.5 guardrails and canary release checks.
+- [x] G.5 Re-run full backend test suite and mark this section complete only after all invariants pass.
 
 
 ---
