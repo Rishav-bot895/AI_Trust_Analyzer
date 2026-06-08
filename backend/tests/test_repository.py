@@ -144,6 +144,53 @@ async def test_update_analysis_result_persists():
 
 
 @pytest.mark.asyncio
+async def test_update_analysis_result_blocks_contradictory_state():
+    session = await _build_session()
+    repo = AnalysisRepository(session)
+    owner = RequestOwner(is_guest=False, user_id="user-guardrail")
+
+    analysis = await repo.create_analysis(owner)
+    state = {
+        "analysis_id": analysis.id,
+        "prompt": "Prompt",
+        "response": "Response",
+        "model_name": "model-z",
+        "claims": [],
+        "verified_claims": [
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "text": "Unsupported supported claim",
+                "confidence": 0.99,
+                "status": "SUPPORTED",
+                "claim_index": 0,
+            }
+        ],
+        "evidence": [
+            {
+                "claim_id": "11111111-1111-1111-1111-111111111111",
+                "snippet": "Direct contradiction",
+                "source_url": "https://example.com/contra",
+                "source_title": "Contra",
+                "relevance_score": 0.9,
+                "source_type": "WEB_SEARCH",
+                "polarity": "AGAINST",
+            }
+        ],
+        "critique": "No issues",
+        "trust_score": 5.0,
+        "hallucination_risk": "HIGH",
+        "verdict": "Conflicted verdict",
+        "timeline": [],
+        "error": None,
+    }
+
+    with pytest.raises(ValueError, match="policy_guardrail_violation"):
+        await repo.update_analysis_result(analysis.id, owner, state)
+
+    await session.close()
+
+
+@pytest.mark.asyncio
 async def test_get_claims_filter_works():
     session = await _build_session()
     repo = AnalysisRepository(session)

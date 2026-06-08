@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 	GUEST_SESSION_TTL_HOURS: int = 24
 
 	model_config = SettingsConfigDict(
-		env_file=Path(__file__).resolve().parents[2] / ".env",
+		env_file=".env",
 		env_file_encoding="utf-8",
 	)
 
@@ -99,7 +99,12 @@ class Settings(BaseSettings):
 	def validate_database_url_for_runtime(self) -> Settings:
 		"""Require asyncpg runtime URL in development/production environments."""
 		if self.ENVIRONMENT in {"development", "production"}:
-			if not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
+			allowed_prefixes = (
+				"postgresql+asyncpg://",
+				"sqlite://",
+				"sqlite+aiosqlite://",
+			)
+			if not self.DATABASE_URL.startswith(allowed_prefixes):
 				raise ValueError(
 					"DATABASE_URL must use postgresql+asyncpg:// in development and production"
 				)

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.agents.base import SYSTEM_PROMPT_FACTUALITY, get_llm, timed_agent
 from app.schemas.agent_state import AgentState
 from app.schemas.claim import ClaimStatus
+from app.services.policy_guardrails import (
+    build_verdict_regeneration_prompt,
+    verdict_conflict_reasons,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 _STATUS_WEIGHTS: dict[str, float] = {
@@ -262,23 +270,36 @@ def _generate_verdict(
     issues: list[str],
     aggregates: dict[str, Any],
     model_name: str,
+    *,
+    regeneration_reasons: list[str] | None = None,
+    previous_verdict: str | None = None,
 ) -> str:
     status_counts = aggregates.get("status_counts") or {}
     evidence_counts = aggregates.get("evidence_counts") or {}
-    issue_context = "\n".join(f"- {item}" for item in issues) if issues else "- none"
-    prompt = "\n".join(
-        [
-            f"Trust score: {score}",
-            f"Hallucination risk: {risk}",
-            f"Claim status counts: {status_counts}",
-            f"Evidence polarity counts: {evidence_counts}",
-            "Top issues:",
-            issue_context,
-            "Constraints: Ensure verdict aligns with status and evidence counts.",
-            "If SUPPORTED dominates and AGAINST is low, do not claim insufficient information.",
-            "Write a concise verdict in 1-3 sentences.",
-        ]
-    )
+    if regeneration_reasons:
+        prompt = build_verdict_regeneration_prompt(
+            score=score,
+            risk=risk,
+            issues=issues,
+            aggregates=aggregates,
+            conflict_reasons=regeneration_reasons,
+            previous_verdict=previous_verdict or "",
+        )
+    else:
+        issue_context = "\n".join(f"- {item}" for item in issues) if issues else "- none"
+        prompt = "\n".join(
+            [
+                f"Trust score: {score}",
+                f"Hallucination risk: {risk}",
+                f"Claim status counts: {status_counts}",
+                f"Evidence polarity counts: {evidence_counts}",
+                "Top issues:",
+                issue_context,
+                "Constraints: Ensure verdict aligns with status and evidence counts.",
+                "If SUPPORTED dominates and AGAINST is low, do not claim insufficient information.",
+                "Write a concise verdict in 1-3 sentences.",
+            ]
+        )
 
     try:
         llm = get_llm(model_name=model_name)
@@ -323,5 +344,43 @@ def judge_analysis(state: AgentState) -> AgentState:
     state["trust_score"] = float(rounded_score)
     state["hallucination_risk"] = risk
     generated_verdict = _generate_verdict(rounded_score, risk, issues, aggregates, model_name)
+    conflict_reasons = verdict_conflict_reasons(generated_verdict, aggregates)
+    if conflict_reasons:
+        logger.warning(
+            "judge_verdict_rejected analysis_id=%s conflict_reasons=%s",
+            state.get("analysis_id"),
+            conflict_reasons,
+        )
+        regenerated_verdict = _generate_verdict(
+            rounded_score,
+            risk,
+            issues,
+            aggregates,
+            model_name,
+            regeneration_reasons=conflict_reasons,
+            previous_verdict=generated_verdict,
+        )
+        if verdict_conflict_reasons(regenerated_verdict, aggregates):
+            logger.warning(
+                "judge_verdict_fallback analysis_id=%s reason=regen_conflict",
+                state.get("analysis_id"),
+            )
+            status_counts = aggregates.get("status_counts") or {}
+            supported_like = int(status_counts.get(ClaimStatus.SUPPORTED.value, 0)) + int(
+                status_counts.get(ClaimStatus.PARTIALLY_SUPPORTED.value, 0)
+            )
+            contradicted_like = int(status_counts.get(ClaimStatus.CONTRADICTED.value, 0))
+            if contradicted_like > supported_like:
+                generated_verdict = (
+                    "Contradictory evidence outweighs support across the analyzed claims."
+                )
+            elif supported_like > contradicted_like:
+                generated_verdict = (
+                    "Most claims are supported by available evidence, with limited contradictory signals."
+                )
+            else:
+                generated_verdict = _fallback_verdict(rounded_score, risk, issues)
+        else:
+            generated_verdict = regenerated_verdict
     state["verdict"] = _enforce_verdict_consistency(generated_verdict, rounded_score, risk, aggregates)
     return state
