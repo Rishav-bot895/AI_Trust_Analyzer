@@ -13,6 +13,8 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - Added a pre-analysis "See history" flow for authenticated users, including opening previous completed results without starting a new analysis.
 - Kept comparison manual-only to avoid unnecessary free-tier model calls.
 - Verification: `npm.cmd test -- --run`, `npm.cmd run lint`, and `npm.cmd run build` all pass.
+- Phase 7 deployment artifacts added: backend Dockerfile using Python 3.14.2, docker-compose, GitHub Actions CI, Vercel config, and manual Render deployment docs. No `render.yaml` is required.
+- Phase 7 verification: backend tests pass, frontend lint/build/tests pass, `docker compose config` renders, and `frontend/vercel.json` parses. Docker image build could not be executed locally because Docker Desktop Linux engine was not running.
 
 **Cross-cutting requirements (apply to all phases/tasks):**
 - Vector storage and similarity search must use Supabase PostgreSQL with pgvector only (no ChromaDB runtime dependency).
@@ -101,12 +103,12 @@ Update this section every time a task is completed.
 - [x] 6.2 Configure Supabase connection for development and production
 
 ### Phase 7 - Deployment and CI/CD
-- [ ] 7.1 Create Dockerfile for the FastAPI backend
-- [ ] 7.2 Create docker-compose.yml for local full-stack development
-- [ ] 7.3 Create GitHub Actions CI workflow
-- [ ] 7.4 Configure Render deployment for backend
-- [ ] 7.5 Configure Vercel deployment for frontend
-- [ ] 7.6 Write production environment variables documentation
+- [x] 7.1 Create Dockerfile for the FastAPI backend
+- [x] 7.2 Create docker-compose.yml for local full-stack development
+- [x] 7.3 Create GitHub Actions CI workflow
+- [x] 7.4 Document manual Render deployment for backend (no render.yaml)
+- [x] 7.5 Configure Vercel deployment for frontend
+- [x] 7.6 Write production environment variables documentation
 
 ---
 # Corrections & Enhancements
@@ -2628,7 +2630,7 @@ test_backend_wake_up_success_state_transitions_to_app
 **Explanation**: Multi-stage Docker build for the backend: a slim Python image that installs dependencies and runs uvicorn.
 
 **Scope**:
-- Base: `python:3.12-slim`
+- Base: `python:3.14.2-slim` to match the project virtual environment Python version
 - `WORKDIR /app`
 - `COPY requirements.txt .` → `RUN pip install --no-cache-dir -r requirements.txt`
 - `COPY app/ ./app/`
@@ -2672,7 +2674,7 @@ test_backend_wake_up_success_state_transitions_to_app
 
 **Scope**:
 - Trigger: `push` to `main`, all `pull_request` events
-- Job `backend-test`: Python 3.12, `pip install -r requirements.txt`, `pytest --cov=app --cov-report=xml`
+- Job `backend-test`: Python 3.14.2, `pip install -r requirements.txt`, `pytest --cov=backend/app --cov-report=xml`
 - Job `frontend-check`: Node 20, `npm ci`, `npm run lint`, `tsc --noEmit`, `npm test -- --run`
 - Upload coverage to Codecov (optional, add if token available)
 - Fail fast: if `backend-test` fails, `frontend-check` still runs
@@ -2684,20 +2686,24 @@ test_backend_wake_up_success_state_transitions_to_app
 
 ---
 
-### Task 7.4 — Configure Render deployment for backend
+### Task 7.4 — Document manual Render deployment for backend
 **Complexity**: LOW  
-**Files**: `render.yaml`  
-**Explanation**: A `render.yaml` blueprint file so the backend can be deployed to Render.com with one click, with all required environment variable placeholders.
+**Files**: `README.md`  
+**Explanation**: Render deployment is configured manually in the Render website. Do not add `render.yaml`.
 
 **Scope**:
-- Service type: `web`, environment: `python`, buildCommand: `pip install -r requirements.txt`, startCommand: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Environment variables: `GEMINI_API_KEY` (sync from Render secret), `TAVILY_API_KEY`, `DATABASE_URL`, `ENVIRONMENT=production`
-- Health check path: `/`
-- Free tier instance type
+- Document manual Render setup values in README
+- Runtime: Docker
+- Root directory: `backend`
+- Docker image: `python:3.14.2-slim`
+- Health check path: `/api/v1/health`
+- Environment variables: all backend variables from `backend/.env.example`
+- No `render.yaml` file is required or generated
 
 **Acceptance Criteria**:
-- Render accepts `render.yaml` without errors
-- All required env vars listed as `sync: false` (user must set them)
+- README contains enough Render setup information to configure the service manually
+- Repository does not add `render.yaml`
+- No real secrets committed to the repository
 
 ---
 

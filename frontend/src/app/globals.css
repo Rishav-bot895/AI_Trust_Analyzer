@@ -37,9 +37,9 @@
   --color-risk-unknown: var(--color-unsupported);
 
   /* Typography */
-  --font-inter: var(--font-inter, "Inter", sans-serif);
-  --font-mono: var(--font-mono, "DM Mono", monospace);
-  --font-serif: var(--font-serif, "Instrument Serif", serif);
+  --font-inter: Arial, Helvetica, sans-serif;
+  --font-mono: "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+  --font-serif: Georgia, "Times New Roman", serif;
 
   /* Spacing scale */
   --radius-sm: 4px;
