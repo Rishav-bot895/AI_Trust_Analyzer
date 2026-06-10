@@ -18,6 +18,9 @@ interface ResultsViewProps {
   result?: AnalysisResponse;
   comparison?: ComparisonResponse;
   comparisonModels?: string[];
+  onRunComparison?: () => Promise<void> | void;
+  isComparisonLoading?: boolean;
+  comparisonError?: string | null;
   showHistoryTab?: boolean;
   authToken?: string | null;
   history?: AnalysisListItem[];
@@ -231,6 +234,57 @@ function HistoryPanel({
   );
 }
 
+function ComparisonPanel({
+  comparison,
+  comparisonModels,
+  onRunComparison,
+  isLoading,
+  error,
+}: {
+  comparison?: ComparisonResponse;
+  comparisonModels: string[];
+  onRunComparison?: () => Promise<void> | void;
+  isLoading: boolean;
+  error: string | null;
+}) {
+  return (
+    <section id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" className="space-y-4">
+      <div className="rounded-md border border-border bg-surface-high p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="label">Model Comparison</p>
+            <p className="mt-1 text-xs text-text-muted">
+              Runs only when requested to avoid extra free-tier model calls.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void onRunComparison?.()}
+            disabled={!onRunComparison || isLoading}
+            className="rounded border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? "Running..." : comparison ? "Run again" : "Run comparison"}
+          </button>
+        </div>
+        {error ? (
+          <p className="mt-3 text-sm text-refuted">{error}</p>
+        ) : null}
+      </div>
+
+      {comparison ? (
+        <ModelComparisonTable
+          analyses={comparison.analyses}
+          models={comparisonModels}
+        />
+      ) : (
+        <div className="rounded-md border border-border bg-surface-high p-4 text-sm text-text-muted">
+          No comparison has been run for this analysis.
+        </div>
+      )}
+    </section>
+  );
+}
+
 function firstEnabledTab(disabledTabs: TabId[], showHistoryTab: boolean): TabId {
   const tabOrder: TabId[] = showHistoryTab
     ? ["claims", "evidence", "timeline", "compare", "history"]
@@ -244,6 +298,9 @@ export function ResultsView({
   result,
   comparison,
   comparisonModels = [],
+  onRunComparison,
+  isComparisonLoading = false,
+  comparisonError = null,
   showHistoryTab = false,
   authToken = null,
   history = [],
@@ -269,8 +326,7 @@ export function ResultsView({
   const disabledTabs = useMemo<TabId[]>(() => [
     ...((analysis?.claims.length ?? 0)   === 0 ? ["claims"]     as TabId[] : []),
     ...((analysis?.evidence.length ?? 0) === 0 ? ["evidence"]   as TabId[] : []),
-    ...(!comparison              ? ["compare"] as TabId[] : []),
-  ], [analysis, comparison]);
+  ], [analysis]);
   const currentTab = disabledTabs.includes(activeTab)
     ? firstEnabledTab(disabledTabs, showHistoryTab)
     : activeTab;
@@ -333,13 +389,14 @@ export function ResultsView({
             </div>
           )}
 
-          {currentTab === "compare" && comparison && (
-            <div id="panel-compare" role="tabpanel" aria-labelledby="tab-compare">
-              <ModelComparisonTable
-                analyses={comparison.analyses}
-                models={comparisonModels}
-              />
-            </div>
+          {currentTab === "compare" && (
+            <ComparisonPanel
+              comparison={comparison}
+              comparisonModels={comparisonModels}
+              onRunComparison={onRunComparison}
+              isLoading={isComparisonLoading}
+              error={comparisonError}
+            />
           )}
 
           {currentTab === "history" && showHistoryTab && (

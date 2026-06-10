@@ -6,6 +6,14 @@
 **Goal**: Build a full-stack factuality-risk analysis tool. User pastes an AI-generated response, five LangGraph agents (Extractor → Retriever → Verifier → Critic → Judge) analyze it, and a React UI displays trust scores, claim-by-claim verdicts, evidence citations, and an agent execution timeline.
 This is decision-support, not definitive hallucination detection; outputs must include transparent confidence labeling and evidence provenance.
 
+**Latest implementation state (2026-06-10)**:
+- Fixed timeline status display so completed agents are not marked Error just because output summaries mention errors.
+- Replaced the timeline view with a native connected timeline and per-agent details, avoiding React Flow rendering and measurement issues.
+- Persisted local authenticated sessions and their backend transport across browser sessions so local authenticated history remains available after reopening.
+- Added a pre-analysis "See history" flow for authenticated users, including opening previous completed results without starting a new analysis.
+- Kept comparison manual-only to avoid unnecessary free-tier model calls.
+- Verification: `npm.cmd test -- --run`, `npm.cmd run lint`, and `npm.cmd run build` all pass.
+
 **Cross-cutting requirements (apply to all phases/tasks):**
 - Vector storage and similarity search must use Supabase PostgreSQL with pgvector only (no ChromaDB runtime dependency).
 - All analysis data must be ownership-scoped:

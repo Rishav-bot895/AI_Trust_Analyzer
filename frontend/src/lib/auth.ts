@@ -18,16 +18,20 @@ interface LocalAuthSession {
   sessionToken: string;
 }
 
-function canUseSessionStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+function canUseWebStorage(): boolean {
+  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
-export function getStoredUserMode(): UserMode | null {
-  if (!canUseSessionStorage()) {
+function getStoredValue(key: string): string | null {
+  if (!canUseWebStorage()) {
     return null;
   }
 
-  const storedMode = window.sessionStorage.getItem(USER_MODE_STORAGE_KEY);
+  return window.sessionStorage.getItem(key) ?? window.localStorage.getItem(key);
+}
+
+export function getStoredUserMode(): UserMode | null {
+  const storedMode = getStoredValue(USER_MODE_STORAGE_KEY);
   if (storedMode === "AUTHENTICATED" || storedMode === "GUEST") {
     return storedMode;
   }
@@ -36,54 +40,67 @@ export function getStoredUserMode(): UserMode | null {
 }
 
 export function setStoredUserMode(mode: UserMode): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
+    return;
+  }
+
+  if (mode === "AUTHENTICATED") {
+    window.localStorage.setItem(USER_MODE_STORAGE_KEY, mode);
+    window.sessionStorage.removeItem(USER_MODE_STORAGE_KEY);
     return;
   }
 
   window.sessionStorage.setItem(USER_MODE_STORAGE_KEY, mode);
+  window.localStorage.removeItem(USER_MODE_STORAGE_KEY);
 }
 
 export function clearStoredUserMode(): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
   window.sessionStorage.removeItem(USER_MODE_STORAGE_KEY);
+  window.localStorage.removeItem(USER_MODE_STORAGE_KEY);
 }
 
 export function getStoredAuthToken(): string | null {
-  if (!canUseSessionStorage()) {
-    return null;
-  }
-
-  const token = window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  const token = getStoredValue(AUTH_TOKEN_STORAGE_KEY);
   return token && token.trim() ? token : null;
 }
 
 export function setStoredAuthToken(token: string): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
   const trimmed = token.trim();
   if (!trimmed) {
     window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    return;
+  }
+
+  if (trimmed.startsWith("local:")) {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, trimmed);
+    window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     return;
   }
 
   window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, trimmed);
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
 export function clearStoredAuthToken(): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
   window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
 function getStoredAccounts(): LocalAccountRecord[] {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return [];
   }
 
@@ -116,7 +133,7 @@ function getStoredAccounts(): LocalAccountRecord[] {
 }
 
 function setStoredAccounts(accounts: LocalAccountRecord[]): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
@@ -132,7 +149,7 @@ function createSessionToken(username: string): string {
 }
 
 export function clearLocalAuthAccounts(): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
@@ -189,24 +206,20 @@ export function authenticateLocalAccount(
 }
 
 export function setStoredAuthSession(session: LocalAuthSession): void {
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
-  window.sessionStorage.setItem(
-    USER_MODE_STORAGE_KEY,
-    session.userMode,
-  );
-  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, session.sessionToken);
-  window.sessionStorage.setItem(`${USER_MODE_STORAGE_KEY}:username`, session.username);
+  window.localStorage.setItem(USER_MODE_STORAGE_KEY, session.userMode);
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, session.sessionToken);
+  window.localStorage.setItem(`${USER_MODE_STORAGE_KEY}:username`, session.username);
+  window.sessionStorage.removeItem(USER_MODE_STORAGE_KEY);
+  window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(`${USER_MODE_STORAGE_KEY}:username`);
 }
 
 export function getStoredUsername(): string | null {
-  if (!canUseSessionStorage()) {
-    return null;
-  }
-
-  const username = window.sessionStorage.getItem(`${USER_MODE_STORAGE_KEY}:username`);
+  const username = getStoredValue(`${USER_MODE_STORAGE_KEY}:username`);
   return username && username.trim() ? username : null;
 }
 
@@ -214,9 +227,10 @@ export function clearStoredAuthSession(): void {
   clearStoredUserMode();
   clearStoredAuthToken();
 
-  if (!canUseSessionStorage()) {
+  if (!canUseWebStorage()) {
     return;
   }
 
   window.sessionStorage.removeItem(`${USER_MODE_STORAGE_KEY}:username`);
+  window.localStorage.removeItem(`${USER_MODE_STORAGE_KEY}:username`);
 }

@@ -1,11 +1,60 @@
-import { getStoredUserMode } from "./auth";
+import { getStoredAuthToken, getStoredUserMode, getStoredUsername } from "./auth";
 
 const GUEST_SESSION_STORAGE_KEY = "ai_trust_guest_session_id";
 const GUEST_SESSION_TOKEN_STORAGE_KEY = "ai_trust_guest_session_token";
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function canUseSessionStorage(): boolean {
-  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function localAuthStorageSuffix(): string | null {
+  const userMode = getStoredUserMode();
+  const authToken = getStoredAuthToken();
+  if (userMode !== "AUTHENTICATED" || !authToken?.startsWith("local:")) {
+    return null;
+  }
+
+  const username = getStoredUsername() ?? authToken.split(":")[1] ?? "local-user";
+  return username.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_") || "local-user";
+}
+
+function storageKeys(): { id: string; token: string; persistent: boolean } {
+  const suffix = localAuthStorageSuffix();
+  if (!suffix) {
+    return {
+      id: GUEST_SESSION_STORAGE_KEY,
+      token: GUEST_SESSION_TOKEN_STORAGE_KEY,
+      persistent: false,
+    };
+  }
+
+  return {
+    id: `${GUEST_SESSION_STORAGE_KEY}:auth:${suffix}`,
+    token: `${GUEST_SESSION_TOKEN_STORAGE_KEY}:auth:${suffix}`,
+    persistent: true,
+  };
+}
+
+function readStorage(key: string, persistent: boolean): string | null {
+  if (!canUseSessionStorage()) {
+    return null;
+  }
+
+  return persistent ? window.localStorage.getItem(key) : window.sessionStorage.getItem(key);
+}
+
+function writeStorage(key: string, value: string, persistent: boolean): void {
+  if (!canUseSessionStorage()) {
+    return;
+  }
+
+  if (persistent) {
+    window.localStorage.setItem(key, value);
+    return;
+  }
+
+  window.sessionStorage.setItem(key, value);
 }
 
 export function getOrCreateGuestSessionId(): string | null {
@@ -13,7 +62,8 @@ export function getOrCreateGuestSessionId(): string | null {
     return null;
   }
 
-  const existing = window.sessionStorage.getItem(GUEST_SESSION_STORAGE_KEY);
+  const keys = storageKeys();
+  const existing = readStorage(keys.id, keys.persistent);
   if (existing) {
     return existing;
   }
@@ -25,12 +75,13 @@ function getGuestSessionToken(): string | null {
   if (!canUseSessionStorage()) {
     return null;
   }
-  return window.sessionStorage.getItem(GUEST_SESSION_TOKEN_STORAGE_KEY);
+  const keys = storageKeys();
+  return readStorage(keys.token, keys.persistent);
 }
 
 export function getGuestSessionHeaders(): Record<string, string> | null {
   const userMode = getStoredUserMode();
-  const authToken = typeof window !== "undefined" ? window.sessionStorage.getItem("ai_trust_auth_token") : null;
+  const authToken = getStoredAuthToken();
 
   if (userMode === "AUTHENTICATED" && (!authToken || !authToken.startsWith("local:"))) {
     return null;
@@ -56,8 +107,9 @@ export async function initializeGuestSession(
     return null;
   }
 
-  const existingId = window.sessionStorage.getItem(GUEST_SESSION_STORAGE_KEY);
-  const existingToken = window.sessionStorage.getItem(GUEST_SESSION_TOKEN_STORAGE_KEY);
+  const keys = storageKeys();
+  const existingId = readStorage(keys.id, keys.persistent);
+  const existingToken = readStorage(keys.token, keys.persistent);
   if (existingId && existingToken) {
     return existingId;
   }
@@ -81,8 +133,8 @@ export async function initializeGuestSession(
     guest_session_id: string;
     guest_session_token: string;
   };
-  window.sessionStorage.setItem(GUEST_SESSION_STORAGE_KEY, payload.guest_session_id);
-  window.sessionStorage.setItem(GUEST_SESSION_TOKEN_STORAGE_KEY, payload.guest_session_token);
+  writeStorage(keys.id, payload.guest_session_id, keys.persistent);
+  writeStorage(keys.token, payload.guest_session_token, keys.persistent);
   return payload.guest_session_id;
 }
 
