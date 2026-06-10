@@ -26,6 +26,20 @@ function getGuestSessionToken(): string | null {
   return window.sessionStorage.getItem(GUEST_SESSION_TOKEN_STORAGE_KEY);
 }
 
+export function getGuestSessionHeaders(): Record<string, string> | null {
+  const guestSessionId = getOrCreateGuestSessionId();
+  const guestSessionToken = getGuestSessionToken();
+
+  if (!guestSessionId || !guestSessionToken) {
+    return null;
+  }
+
+  return {
+    "X-Guest-Session-Id": guestSessionId,
+    "X-Guest-Session-Token": guestSessionToken,
+  };
+}
+
 export async function initializeGuestSession(
   apiBaseUrl: string = DEFAULT_API_BASE_URL,
 ): Promise<string | null> {
@@ -39,11 +53,16 @@ export async function initializeGuestSession(
     return existingId;
   }
 
-  const response = await fetch(`${apiBaseUrl}/api/v1/guest/session/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/v1/guest/session/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    });
+  } catch {
+    return null;
+  }
 
   if (!response.ok) {
     return null;

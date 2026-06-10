@@ -51,6 +51,7 @@ export interface AnalysisResponse {
   hallucinationRisk: HallucinationRisk | null;
   claims: Claim[];
   evidence: Evidence[];
+  timeline: TimelineEvent[];
   critique: string | null;
   verdict: string | null;
   createdAt: string;

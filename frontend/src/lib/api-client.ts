@@ -9,6 +9,7 @@ import type {
   Evidence,
   TimelineEvent,
 } from "../types/api";
+import { getGuestSessionHeaders } from "./guest-session";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -58,12 +59,52 @@ async function parseApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, detail);
 }
 
+function hasAuthorizationHeader(headers: HeadersInit): boolean {
+  if (headers instanceof Headers) {
+    return headers.has("Authorization");
+  }
+
+  if (Array.isArray(headers)) {
+    return headers.some(([name]) => name.toLowerCase() === "authorization");
+  }
+
+  return Object.keys(headers).some((name) => name.toLowerCase() === "authorization");
+}
+
+function withGuestSessionHeaders(headers: HeadersInit = {}): HeadersInit {
+  if (hasAuthorizationHeader(headers)) {
+    return headers;
+  }
+
+  const guestHeaders = getGuestSessionHeaders();
+  if (!guestHeaders) {
+    return headers;
+  }
+
+  if (headers instanceof Headers) {
+    const merged = new Headers(headers);
+    for (const [name, value] of Object.entries(guestHeaders)) {
+      merged.set(name, value);
+    }
+    return merged;
+  }
+
+  if (Array.isArray(headers)) {
+    return [...headers, ...Object.entries(guestHeaders)];
+  }
+
+  return {
+    ...headers,
+    ...guestHeaders,
+  };
+}
+
 async function apiGet<T>(path: string, headers: HeadersInit = {}): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",
-      ...headers,
+      ...withGuestSessionHeaders(headers),
     },
     cache: "no-store",
   });
@@ -80,7 +121,7 @@ async function apiPost<T>(path: string, body: unknown, headers: HeadersInit = {}
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...headers,
+      ...withGuestSessionHeaders(headers),
     },
     body: JSON.stringify(body),
   });
