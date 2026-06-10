@@ -1,8 +1,9 @@
 import { getStoredAuthToken, getStoredUserMode, getStoredUsername } from "./auth";
+import { getApiBaseUrl } from "./api-base";
 
 const GUEST_SESSION_STORAGE_KEY = "ai_trust_guest_session_id";
 const GUEST_SESSION_TOKEN_STORAGE_KEY = "ai_trust_guest_session_token";
-const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const DEFAULT_API_BASE_URL = getApiBaseUrl();
 
 function canUseSessionStorage(): boolean {
   return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined" && typeof window.localStorage !== "undefined";

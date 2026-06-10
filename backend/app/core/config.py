@@ -8,6 +8,10 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _normalize_origin(value: str) -> str:
+	return value.strip().rstrip("/")
+
+
 class Settings(BaseSettings):
 	GEMINI_API_KEY: str
 	TAVILY_API_KEY: str
@@ -77,7 +81,7 @@ class Settings(BaseSettings):
 			return ["http://localhost:3000"]
 
 		if isinstance(value, list):
-			return [str(item).strip() for item in value if str(item).strip()]
+			return [normalized for item in value if (normalized := _normalize_origin(str(item)))]
 
 		if isinstance(value, str):
 			raw = value.strip()
@@ -89,9 +93,9 @@ class Settings(BaseSettings):
 				parsed = json.loads(raw)
 				if not isinstance(parsed, list):
 					raise ValueError("ALLOWED_ORIGINS JSON value must be an array")
-				return [str(item).strip() for item in parsed if str(item).strip()]
+				return [normalized for item in parsed if (normalized := _normalize_origin(str(item)))]
 
-			return [item.strip() for item in raw.split(",") if item.strip()]
+			return [normalized for item in raw.split(",") if (normalized := _normalize_origin(item))]
 
 		raise ValueError("ALLOWED_ORIGINS must be a list or string")
 

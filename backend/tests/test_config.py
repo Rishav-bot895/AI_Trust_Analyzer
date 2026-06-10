@@ -45,6 +45,21 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert config.settings.ALLOWED_ORIGINS == ["http://localhost:3000", "http://localhost:5173"]
 
 
+def test_allowed_origins_normalize_trailing_slashes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost:5432/testdb")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-key")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "jwt-secret")
+    monkeypatch.setenv("ALLOWED_ORIGINS", '["https://aitrustanalyszer.vercel.app/"]')
+
+    config = _reload_config_module(monkeypatch, tmp_path)
+
+    assert config.settings.ALLOWED_ORIGINS == ["https://aitrustanalyszer.vercel.app"]
+
+
 def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("TAVILY_API_KEY", "test-tavily-key")

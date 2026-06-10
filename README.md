@@ -83,7 +83,7 @@ Backend variables live in `backend/.env`.
 | `MAX_CLAIMS` | No | `50` | Backend | Maximum extracted claims per analysis. |
 | `VECTOR_EMBEDDING_DIM` | No | `384` | Backend | pgvector embedding dimension. |
 | `GUEST_SESSION_TTL_HOURS` | No | `24` | Backend | Guest retention window. |
-| `NEXT_PUBLIC_API_URL` | Yes in production | `http://localhost:8000` | Frontend | Public backend URL used by browser requests. |
+| `NEXT_PUBLIC_API_URL` | No | local dev uses `http://localhost:8000`; production defaults to same-origin `/api/v1` rewrites | Frontend | Optional public backend URL used by browser requests. Leave unset on Vercel when using `frontend/vercel.json` rewrites. |
 
 Frontend variables live in `frontend/.env` or the Vercel project settings.
 
@@ -132,6 +132,12 @@ python -m app.start
 
 Set all backend environment variables from the table above in Render. Do not commit secrets.
 
+For the deployed frontend, set Render:
+
+```text
+ALLOWED_ORIGINS=["https://aitrustanalyszer.vercel.app"]
+```
+
 ### Frontend on Vercel
 
 Use `frontend` as the Vercel project root.
@@ -139,10 +145,10 @@ Use `frontend` as the Vercel project root.
 Set:
 
 ```text
-NEXT_PUBLIC_API_URL=https://your-render-backend.onrender.com
+NEXT_PUBLIC_API_URL=https://ai-trust-analyzer.onrender.com
 ```
 
-Update `frontend/vercel.json` so the rewrite destination points to your real Render backend URL.
+Or leave `NEXT_PUBLIC_API_URL` unset and use the `frontend/vercel.json` rewrite to proxy `/api/v1/*` to `https://ai-trust-analyzer.onrender.com/api/v1/*`. The rewrite avoids browser CORS because frontend requests stay same-origin.
 
 ## CI
 

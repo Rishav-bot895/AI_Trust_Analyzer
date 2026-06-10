@@ -10,10 +10,11 @@ import type {
   Evidence,
   TimelineEvent,
 } from "../types/api";
+import { getApiBaseUrl } from "./api-base";
 import { getStoredAuthToken, getStoredUserMode } from "./auth";
 import { getGuestSessionHeaders } from "./guest-session";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE_URL = getApiBaseUrl();
 const HEALTH_CHECK_TIMEOUT_MS = 5000;
 
 interface ApiErrorPayload {

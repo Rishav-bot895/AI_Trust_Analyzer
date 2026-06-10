@@ -18,6 +18,8 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - Render runtime fix: backend Docker image now uses the backend-native `/app/app` layout and a startup entrypoint that binds Uvicorn to Render's `PORT` while local Docker still defaults to port 8000.
 - Render startup fix: API routes now lazy-load the analysis workflow, and vector embeddings lazy-load `sentence_transformers`, so Render can bind the health-check port before LangGraph/LangChain/Torch/model imports run.
 - Render startup diagnostics fix: Docker now runs `python -m app.start`, which prints flushed startup milestones, imports the FastAPI app explicitly, and starts Uvicorn from the app object using Render's `PORT`.
+- Frontend deployment fix: API base URL resolution is centralized, production falls back to same-origin `/api/v1` rewrites instead of `localhost:8000`, and Vercel rewrites now target the deployed Render backend.
+- Deployment CORS fix: backend CORS origin parsing now normalizes trailing slashes, and deployment docs include the exact Render `ALLOWED_ORIGINS` value for the Vercel frontend.
 
 **Cross-cutting requirements (apply to all phases/tasks):**
 - Vector storage and similarity search must use Supabase PostgreSQL with pgvector only (no ChromaDB runtime dependency).
