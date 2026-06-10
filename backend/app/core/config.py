@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 	SUPABASE_JWT_ISSUER: str | None = None
 	SUPABASE_JWT_AUDIENCE: str | None = None
 	SUPABASE_JWKS_URL: str | None = None
-	ALLOWED_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+	ALLOWED_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:3000", "https://aitrustanalyszer.vercel.app/"])
 	LOG_LEVEL: str = "INFO"
 	MAX_CLAIMS: int = 50
 	VECTOR_EMBEDDING_DIM: int = 384
