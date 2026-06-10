@@ -170,6 +170,53 @@ def test_verifier_contradicted_claim(monkeypatch):
     assert result["evidence"][0]["polarity"] == "AGAINST"
 
 
+def test_verifier_mixed_polarity_claim_is_not_contradicted(monkeypatch):
+    claim_id = "12121212-1212-1212-1212-121212121212"
+    fake_llm = _FakeLLM(
+        [
+            '''{"verdict":"CONTRADICTED","evidence_polarities":[{"evidence_index":0,"polarity":"AGAINST"},{"evidence_index":1,"polarity":"FOR"}]}'''
+        ]
+    )
+    monkeypatch.setattr(
+        verifier,
+        "get_llm",
+        lambda model_name="gemini-3.1-flash-lite", temperature=0.0: fake_llm,
+    )
+
+    state = _base_state(
+        claims=[{"id": claim_id, "text": "Claim with mixed evidence", "confidence": 0.4, "claim_index": 0}],
+        evidence=[
+            {
+                "id": "13131313-1313-1313-1313-131313131313",
+                "claim_id": claim_id,
+                "snippet": "Official records say this is not true.",
+                "source_url": "https://example.com/against",
+                "source_title": "Against source",
+                "relevance_score": 0.95,
+                "source_type": "WEB_SEARCH",
+                "polarity": None,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            },
+            {
+                "id": "14141414-1414-1414-1414-141414141414",
+                "claim_id": claim_id,
+                "snippet": "Another source supports part of the claim.",
+                "source_url": "https://example.com/for",
+                "source_title": "For source",
+                "relevance_score": 0.2,
+                "source_type": "WEB_SEARCH",
+                "polarity": None,
+                "retrieved_at": "2026-01-01T00:00:00Z",
+            },
+        ],
+    )
+
+    result = verifier.verify_claims(state)
+
+    assert [item["polarity"] for item in result["evidence"]] == ["AGAINST", "FOR"]
+    assert result["verified_claims"][0]["status"] == "PARTIALLY_SUPPORTED"
+
+
 def test_verifier_no_evidence_returns_unsupported(monkeypatch):
     fake_llm = _FakeLLM([])
     monkeypatch.setattr(

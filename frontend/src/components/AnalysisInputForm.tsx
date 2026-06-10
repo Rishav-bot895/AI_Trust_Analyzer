@@ -1,45 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import type { AnalysisRequest } from "../types/api";
+import type { AnalysisRequest, UserMode } from "../types/api";
 import { getOrCreateGuestSessionId } from "../lib/guest-session";
 
 interface AnalysisInputFormProps {
   onSubmit: (request: AnalysisRequest) => Promise<void>;
   isLoading: boolean;
+  userMode: UserMode;
 }
 
-const MODELS = [
-  { value: "gpt-4o",            label: "GPT-4o" },
-  { value: "gpt-4o-mini",       label: "GPT-4o Mini" },
-  { value: "gpt-4-turbo",       label: "GPT-4 Turbo" },
-  { value: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet" },
-  { value: "claude-3-haiku",    label: "Claude 3 Haiku" },
-  { value: "gemini-1.5-pro",    label: "Gemini 1.5 Pro" },
-];
+const MODELS = [{ value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" }];
+const PROMPT_MAX_CHARS = 2000;
+const RESPONSE_MAX_CHARS = 10000;
+const RESPONSE_MIN_CHARS = 50;
+const WARNING_THRESHOLD = 0.9;
 
-export function AnalysisInputForm({ onSubmit, isLoading }: AnalysisInputFormProps) {
+export function AnalysisInputForm({ onSubmit, isLoading, userMode }: AnalysisInputFormProps) {
   const [prompt, setPrompt]       = useState("");
   const [response, setResponse]   = useState("");
   const [modelName, setModelName] = useState(MODELS[0].value);
   const [touched, setTouched]     = useState({ prompt: false, response: false });
 
-  const promptError   = touched.prompt   && prompt.trim().length   < 10;
-  const responseError = touched.response && response.trim().length < 10;
-  const canSubmit     = prompt.trim().length >= 10 && response.trim().length >= 10 && !isLoading;
+  const promptLength = prompt.length;
+  const responseLength = response.length;
+  const promptTrimmed = prompt.trim();
+  const responseTrimmed = response.trim();
+  const promptWarning = promptLength >= Math.floor(PROMPT_MAX_CHARS * WARNING_THRESHOLD);
+  const responseWarning = responseLength >= Math.floor(RESPONSE_MAX_CHARS * WARNING_THRESHOLD);
+
+  const promptError = touched.prompt && promptTrimmed.length === 0;
+  const responseError = touched.response && responseTrimmed.length < RESPONSE_MIN_CHARS;
+  const canSubmit = promptTrimmed.length > 0 && responseTrimmed.length >= RESPONSE_MIN_CHARS && !isLoading;
 
   async function handleSubmit() {
     setTouched({ prompt: true, response: true });
     if (!canSubmit) return;
 
-    const guestSessionId = getOrCreateGuestSessionId();
+    const guestSessionId = userMode === "GUEST" ? getOrCreateGuestSessionId() : null;
     await onSubmit({
-      prompt:         prompt.trim(),
-      response:       response.trim(),
+      prompt: promptTrimmed,
+      response: responseTrimmed,
       modelName,
-      userMode:       "GUEST",
+      userMode,
       guestSessionId: guestSessionId ?? undefined,
     });
+
+    setPrompt("");
+    setResponse("");
+    setTouched({ prompt: false, response: false });
   }
 
   return (
@@ -48,12 +57,14 @@ export function AnalysisInputForm({ onSubmit, isLoading }: AnalysisInputFormProp
       {/* Header */}
       <div className="space-y-1">
         <p className="label">New Analysis</p>
-        <h2
-          className="text-2xl text-text-primary"
-          style={{ fontFamily: "var(--font-serif)" }}
-        >
-          Verify an AI Response
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl text-text-primary" style={{ fontFamily: "var(--font-serif)" }}>
+            Verify an AI Response
+          </h2>
+          <span className="rounded-full border border-border bg-surface-high px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-text-secondary">
+            {userMode === "AUTHENTICATED" ? "Authenticated mode" : "Guest mode"}
+          </span>
+        </div>
         <p className="text-sm text-text-secondary">
           Paste the original prompt and the AI-generated response you want to fact-check.
         </p>
@@ -61,60 +72,70 @@ export function AnalysisInputForm({ onSubmit, isLoading }: AnalysisInputFormProp
 
       {/* Model selector */}
       <div className="space-y-2">
-        <label className="label">Model that generated the response</label>
-        <div className="flex flex-wrap gap-2">
+        <label htmlFor="analysis-model" className="label">Model that generated the response</label>
+        <select
+          id="analysis-model"
+          value={modelName}
+          onChange={(e) => setModelName(e.target.value)}
+          className="w-full rounded-md border border-border bg-surface-high px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-accent"
+        >
           {MODELS.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => setModelName(m.value)}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                modelName === m.value
-                  ? "bg-accent text-surface font-medium"
-                  : "border border-border text-text-secondary hover:border-accent hover:text-accent"
-              }`}
-            >
+            <option key={m.value} value={m.value}>
               {m.label}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
       {/* Prompt */}
       <div className="space-y-2">
-        <label className="label">Original Prompt</label>
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="analysis-prompt" className="label">Original Prompt</label>
+          <span className={`text-xs ${promptWarning ? "text-uncertain" : "text-text-muted"}`}>
+            {promptLength}/{PROMPT_MAX_CHARS}
+          </span>
+        </div>
         <textarea
+          id="analysis-prompt"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onBlur={() => setTouched((t) => ({ ...t, prompt: true }))}
           placeholder="What question or instruction was given to the AI?"
           rows={4}
+          maxLength={PROMPT_MAX_CHARS}
           className={`w-full bg-surface-high border rounded-md px-4 py-3 text-sm text-text-primary
             placeholder:text-text-muted resize-none outline-none transition-colors
             focus:border-accent
             ${promptError ? "border-refuted" : "border-border"}`}
         />
         {promptError && (
-          <p className="text-xs text-refuted">Please enter at least 10 characters.</p>
+          <p className="text-xs text-refuted">Original prompt is required.</p>
         )}
       </div>
 
       {/* AI Response */}
       <div className="space-y-2">
-        <label className="label">AI-Generated Response</label>
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="analysis-response" className="label">AI Response to Analyze</label>
+          <span className={`text-xs ${responseWarning ? "text-uncertain" : "text-text-muted"}`}>
+            {responseLength}/{RESPONSE_MAX_CHARS}
+          </span>
+        </div>
         <textarea
+          id="analysis-response"
           value={response}
           onChange={(e) => setResponse(e.target.value)}
           onBlur={() => setTouched((t) => ({ ...t, response: true }))}
           placeholder="Paste the AI response you want to analyze for hallucinations…"
           rows={7}
+          maxLength={RESPONSE_MAX_CHARS}
           className={`w-full bg-surface-high border rounded-md px-4 py-3 text-sm text-text-primary
             placeholder:text-text-muted resize-none outline-none transition-colors
             focus:border-accent
             ${responseError ? "border-refuted" : "border-border"}`}
         />
         {responseError && (
-          <p className="text-xs text-refuted">Please enter at least 10 characters.</p>
+          <p className="text-xs text-refuted">Please enter at least 50 characters.</p>
         )}
       </div>
 

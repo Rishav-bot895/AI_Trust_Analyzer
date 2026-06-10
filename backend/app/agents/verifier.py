@@ -165,6 +165,25 @@ def _status_from_weighted_scores(
 	return ClaimStatus.PARTIALLY_SUPPORTED
 
 
+def _enforce_status_polarity_contract(
+	status: ClaimStatus,
+	*,
+	for_count: int,
+	against_count: int,
+) -> ClaimStatus:
+	"""Normalize status so it cannot contradict observed evidence polarity mix."""
+	if status is ClaimStatus.SUPPORTED and against_count > 0:
+		return ClaimStatus.PARTIALLY_SUPPORTED if for_count > 0 else ClaimStatus.CONTRADICTED
+	if status is ClaimStatus.CONTRADICTED and for_count > 0:
+		return ClaimStatus.PARTIALLY_SUPPORTED if against_count > 0 else ClaimStatus.SUPPORTED
+	if status is ClaimStatus.PARTIALLY_SUPPORTED:
+		if for_count == 0 and against_count > 0:
+			return ClaimStatus.CONTRADICTED
+		if against_count == 0 and for_count > 0:
+			return ClaimStatus.SUPPORTED
+	return status
+
+
 def _calibrated_confidence(
 	status: ClaimStatus,
 	weighted_for: float,
@@ -527,6 +546,12 @@ def verify_claims(state: AgentState) -> AgentState:
 			status = ClaimStatus.SUPPORTED if claim_against_count == 0 else ClaimStatus.PARTIALLY_SUPPORTED
 			verification_trace["fallback_reason"] = None
 			claim_reason_codes.discard(VERIFIER_REASON_LOW_SIGNAL)
+
+		status = _enforce_status_polarity_contract(
+			status,
+			for_count=claim_for_count,
+			against_count=claim_against_count,
+		)
 
 		evidence_count = len(claim_evidence) if claim_evidence else 1
 		relevance_mean = relevance_total / float(evidence_count)

@@ -2,170 +2,318 @@
 
 import { useEffect, useState } from "react";
 import { AnalysisInputForm } from "../components/AnalysisInputForm";
+import { AuthGate } from "../components/AuthGate";
+import { BackendWakeUpScreen } from "../components/BackendWakeUpScreen";
 import { ResultsView } from "../components/ResultsView";
-import { useAnalysis } from "../hooks/useAnalysis";
-import { compareModels } from "../lib/api-client";
-import { initializeGuestSession, registerGuestSessionLifecycle } from "../lib/guest-session";
-import type { AnalysisRequest, ComparisonResponse } from "../types/api";
 import { ResultsSkeleton, ShimmerStyles } from "../components/SkeletonLoader";
+import { useAnalysis } from "../hooks/useAnalysis";
+import { useBackendHealth } from "../hooks/useBackendHealth";
+import { compareModels } from "../lib/api-client";
+import {
+  clearStoredAuthToken,
+  clearStoredUserMode,
+  getStoredAuthToken,
+  getStoredUserMode,
+  setStoredAuthToken,
+  setStoredUserMode,
+} from "../lib/auth";
+import { clearGuestSession, initializeGuestSession } from "../lib/guest-session";
+import type { AnalysisRequest, ComparisonResponse, UserMode } from "../types/api";
 
 const COMPARISON_MODELS = ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet"];
+const WAKE_SCREEN_DELAY_MS = 2000;
 
 type AppState = "idle" | "analyzing" | "done" | "error";
 
+function getAppState(phase: ReturnType<typeof useAnalysis>["phase"]): AppState {
+  if (phase === "submitting" || phase === "polling") return "analyzing";
+  if (phase === "done") return "done";
+  if (phase === "error") return "error";
+  return "idle";
+}
+
 export default function Home() {
   const { phase, result, error, submit, reset } = useAnalysis();
-  const [comparison, setComparison]             = useState<ComparisonResponse | null>(null);
-  const [appState, setAppState]                 = useState<AppState>("idle");
+  const [selectedMode, setSelectedMode] = useState<UserMode | null>(() => getStoredUserMode());
+  const [authToken, setAuthToken] = useState<string | null>(() => getStoredAuthToken());
+  const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
+  const [showWakeScreen, setShowWakeScreen] = useState(false);
+  const [backendGateDone, setBackendGateDone] = useState(false);
+  const [guestSessionReady, setGuestSessionReady] = useState(() => {
+    const storedMode = getStoredUserMode();
+    const storedToken = getStoredAuthToken();
+    return storedMode !== "GUEST" && !(storedMode === "AUTHENTICATED" && storedToken?.startsWith("local:"));
+  });
 
-  // Guest session lifecycle
-  useEffect(() => {
-    void initializeGuestSession();
-    return registerGuestSessionLifecycle();
-  }, []);
+  const modeReady = selectedMode === "GUEST" || (selectedMode === "AUTHENTICATED" && Boolean(authToken));
+  const { isHealthy } = useBackendHealth(modeReady);
+  const appState = getAppState(phase);
+  const backendReady = backendGateDone || (isHealthy && !showWakeScreen);
+  const requiresGuestTransport = selectedMode === "AUTHENTICATED" && authToken?.startsWith("local:");
+  const appReady = modeReady && backendReady && (!requiresGuestTransport || guestSessionReady) && guestSessionReady;
+  const isLoading = appState === "analyzing";
 
-  // Mirror analysis phase → appState
   useEffect(() => {
-    if (phase === "idle")                          setAppState("idle");
-    else if (phase === "submitting" || phase === "polling") setAppState("analyzing");
-    else if (phase === "done")                     setAppState("done");
-    else if (phase === "error")                    setAppState("error");
-  }, [phase]);
+    if (!modeReady || isHealthy || showWakeScreen) return;
+
+    const timerId = window.setTimeout(() => {
+      setShowWakeScreen(true);
+    }, WAKE_SCREEN_DELAY_MS);
+
+    return () => window.clearTimeout(timerId);
+  }, [isHealthy, modeReady, showWakeScreen]);
+
+  useEffect(() => {
+    if (selectedMode !== "GUEST" || !backendReady) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const prepareGuestSession = async () => {
+      await initializeGuestSession();
+      if (!cancelled) {
+        setGuestSessionReady(true);
+      }
+    };
+
+    void prepareGuestSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backendReady, selectedMode]);
+
+  useEffect(() => {
+    if (selectedMode !== "AUTHENTICATED" || !authToken?.startsWith("local:") || guestSessionReady) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const prepareLocalTransport = async () => {
+      await initializeGuestSession();
+      if (!cancelled) {
+        setGuestSessionReady(true);
+      }
+    };
+
+    void prepareLocalTransport();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, guestSessionReady, selectedMode]);
+
+  async function handleAuthenticatedContinue(token: string) {
+    clearStoredUserMode();
+    clearStoredAuthToken();
+    clearGuestSession();
+    setStoredUserMode("AUTHENTICATED");
+    setStoredAuthToken(token);
+    setSelectedMode("AUTHENTICATED");
+    setAuthToken(token);
+    setComparison(null);
+    setShowWakeScreen(false);
+    setBackendGateDone(false);
+    setGuestSessionReady(!token.startsWith("local:"));
+    reset();
+  }
+
+  async function handleGuestContinue() {
+    clearStoredUserMode();
+    clearStoredAuthToken();
+    clearGuestSession();
+    setStoredUserMode("GUEST");
+    setSelectedMode("GUEST");
+    setAuthToken(null);
+    setComparison(null);
+    setShowWakeScreen(false);
+    setBackendGateDone(false);
+    setGuestSessionReady(false);
+    reset();
+  }
 
   async function handleSubmit(request: AnalysisRequest) {
     setComparison(null);
     await submit(request);
 
-    // Fire off a comparison in the background once the main analysis completes
     try {
       const comp = await compareModels({
-        prompt:   request.prompt,
+        prompt: request.prompt,
         response: request.response,
-        models:   COMPARISON_MODELS,
+        models: COMPARISON_MODELS,
       });
       setComparison(comp);
     } catch {
-      // Comparison is non-critical — silently ignore failures
+      // Comparison is non-critical, so the primary result remains usable.
     }
   }
 
-  const isLoading = appState === "analyzing";
+  if (!selectedMode || (selectedMode === "AUTHENTICATED" && !authToken)) {
+    return <AuthGate isLoading={false} onAuthenticated={handleAuthenticatedContinue} onGuest={handleGuestContinue} />;
+  }
+
+  if (!appReady) {
+    if (showWakeScreen) {
+      return <BackendWakeUpScreen isHealthy={isHealthy} onComplete={() => setBackendGateDone(true)} />;
+    }
+
+    return <main className="min-h-screen bg-surface" aria-label="Checking backend readiness" />;
+  }
 
   return (
-    <div className="flex flex-col min-h-screen">
-
-      {/* ── Header ─────────────────────────────────────────── */}
-      <header className="border-b border-border bg-surface-raised/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-50 border-b border-border bg-surface-raised/80 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div
-              className="w-7 h-7 rounded flex items-center justify-center text-sm"
+              className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-semibold"
               style={{ background: "var(--color-accent-glow)", border: "1px solid var(--color-accent-dim)", color: "var(--color-accent)" }}
             >
-              ⬡
+              AI
             </div>
-            <span
-              className="text-lg"
-              style={{ fontFamily: "var(--font-serif)", color: "var(--color-text-primary)" }}
-            >
+            <span className="text-lg" style={{ fontFamily: "var(--font-serif)", color: "var(--color-text-primary)" }}>
               AI Trust Analyzer
             </span>
           </div>
 
-          {appState !== "idle" && (
+          <div className="flex items-center gap-3 text-xs text-text-muted">
+            <span className="rounded-full border border-border px-3 py-1 uppercase tracking-[0.18em]">
+              {selectedMode === "AUTHENTICATED" ? "Authenticated" : "Guest"}
+            </span>
+
             <button
               type="button"
-              onClick={() => { reset(); setComparison(null); }}
-              className="text-xs text-text-secondary border border-border px-3 py-1.5 rounded
-                         hover:border-accent hover:text-accent transition-colors"
+              onClick={() => {
+                clearStoredUserMode();
+                clearStoredAuthToken();
+                clearGuestSession();
+                reset();
+                setComparison(null);
+                setShowWakeScreen(false);
+                setBackendGateDone(false);
+                setGuestSessionReady(false);
+                setSelectedMode(null);
+                setAuthToken(null);
+              }}
+              className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
             >
-              ← New Analysis
+              Change mode
             </button>
-          )}
+
+            {appState !== "idle" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  reset();
+                  setComparison(null);
+                }}
+                className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
+              >
+                New Analysis
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
-      {/* ── Main ───────────────────────────────────────────── */}
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8 space-y-6">
-
-        {/* Idle: hero + form */}
+      <main className="mx-auto w-full max-w-4xl flex-1 space-y-6 px-4 py-8">
         {appState === "idle" && (
           <div className="space-y-8">
-            {/* Hero */}
-            <div className="text-center space-y-3 pt-6">
+            <div className="space-y-3 pt-6 text-center">
               <p className="label tracking-widest">Hallucination Detection</p>
-              <h1
-                className="text-4xl sm:text-5xl text-text-primary leading-tight"
-                style={{ fontFamily: "var(--font-serif)" }}
-              >
+              <h1 className="text-4xl leading-tight text-text-primary sm:text-5xl" style={{ fontFamily: "var(--font-serif)" }}>
                 Can you trust<br />
                 <span style={{ color: "var(--color-accent)" }}>this AI response?</span>
               </h1>
-              <p className="text-text-secondary text-sm max-w-md mx-auto leading-relaxed">
-                Paste any AI-generated response and we'll extract every claim,
-                find supporting or contradicting evidence, and give you a trust score.
+              <p className="mx-auto max-w-md text-sm leading-relaxed text-text-secondary">
+                Paste any AI-generated response and we&apos;ll extract every claim, find supporting or contradicting evidence, and give you a trust score.
               </p>
             </div>
 
-            <AnalysisInputForm onSubmit={handleSubmit} isLoading={isLoading} />
+            <AnalysisInputForm onSubmit={handleSubmit} isLoading={isLoading} userMode={selectedMode} />
           </div>
         )}
 
-        {/* Analyzing: form stays visible with loading state + progress indicator */}
         {appState === "analyzing" && (
-            <div className="space-y-6">
-              <AnalysisInputForm onSubmit={handleSubmit} isLoading={true} />
-              <ResultsSkeleton />
-              <ShimmerStyles />
-            </div>
-          )}
+          <div className="space-y-6">
+            <AnalysisInputForm onSubmit={handleSubmit} isLoading={true} userMode={selectedMode} />
+            <ResultsSkeleton />
+            <ShimmerStyles />
+          </div>
+        )}
 
-             
-        {/* Error state */}
         {appState === "error" && (
           <div className="space-y-4">
-            <div
-              className="card p-6 space-y-3"
-              style={{ borderColor: "rgba(239,68,68,0.3)" }}
-            >
-              <p className="label" style={{ color: "var(--color-refuted)" }}>Analysis Failed</p>
+            <div className="card space-y-3 p-6" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
+              <p className="label" style={{ color: "var(--color-refuted)" }}>
+                Analysis Failed
+              </p>
               <p className="text-sm text-text-secondary">{error ?? "An unexpected error occurred."}</p>
               <button
                 type="button"
-                onClick={() => { reset(); setComparison(null); }}
-                className="text-xs border border-border px-3 py-1.5 rounded
-                           hover:border-accent hover:text-accent transition-colors text-text-secondary"
+                onClick={() => {
+                  reset();
+                  setComparison(null);
+                }}
+                className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
               >
-                ← Try Again
+                Try Again
               </button>
             </div>
           </div>
         )}
 
-        {/* Done: results */}
-        {appState === "done" && result && (
-          <ResultsView
-            result={result}
-            comparison={comparison ?? undefined}
-            comparisonModels={COMPARISON_MODELS}
-          />
-        )}
+        {appState === "done" && result ? (
+          <section className="results-slide-in" aria-label="Analysis results">
+            <ResultsView
+              result={result}
+              comparison={comparison ?? undefined}
+              comparisonModels={COMPARISON_MODELS}
+              showHistoryTab={selectedMode === "AUTHENTICATED"}
+              authToken={authToken}
+            />
+          </section>
+        ) : null}
       </main>
 
-      {/* ── Footer ─────────────────────────────────────────── */}
-      <footer className="border-t border-border py-4 px-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+      <footer className="border-t border-border px-4 py-4">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <p className="text-xs text-text-muted">AI Trust Analyzer</p>
-          <p className="text-xs text-text-muted">
-            Results are probabilistic — always verify critical information independently.
-          </p>
+          <div className="flex items-center gap-4 text-xs text-text-muted">
+            <p>Results are probabilistic. Always verify critical information independently.</p>
+            <a
+              href="https://github.com/Rishav-bot895/AI_Trust_Analyzer"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-secondary transition-colors hover:text-accent"
+            >
+              GitHub
+            </a>
+          </div>
         </div>
       </footer>
 
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
-          50%       { opacity: 0.35; }
+          50% { opacity: 0.35; }
+        }
+
+        @keyframes results-slide-in {
+          from {
+            opacity: 0;
+            transform: translateY(16px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .results-slide-in {
+          animation: results-slide-in 360ms ease-out both;
         }
       `}</style>
     </div>

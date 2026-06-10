@@ -7,7 +7,7 @@ export type ClaimStatus =
 
 export type EvidenceSource = "WEB_SEARCH" | "PGVECTOR";
 
-export type EvidencePolarity = "FOR" | "AGAINST";
+export type EvidencePolarity = "FOR" | "AGAINST" | "UNKNOWN";
 
 export type AnalysisStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 
@@ -73,6 +73,7 @@ export interface AnalysisRequest {
   prompt: string;
   response: string;
   modelName?: string;
+  includeComparison?: boolean;
   userMode: UserMode;
   guestSessionId?: string;
 }

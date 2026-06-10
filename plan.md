@@ -62,29 +62,31 @@ Update this section every time a task is completed.
 - [x] 3.8 Implement CRUD repository layer for database operations
 
 ### Phase 4 - Frontend Components
-- [ ] 4.1 Update layout.tsx and application metadata
-- [ ] 4.2 Set up global CSS design tokens and Tailwind base styles
-- [ ] 4.3 Create TypeScript types matching backend API schemas
-- [ ] 4.4 Create API client module with fetch wrapper
-- [ ] 4.5 Create useAnalysis and usePolling React hooks
-- [ ] 4.6 Build AnalysisInputForm component
-- [ ] 4.7 Build TrustScoreCard component
-- [ ] 4.8 Build ClaimsTable component with status badges
-- [ ] 4.9 Build EvidencePanel component
-- [ ] 4.10 Install React Flow and build AgentTimeline component
-- [ ] 4.11 Build ModelComparisonTable component
-- [ ] 4.12 Build TabNavigation component
-- [ ] 4.13 Assemble ResultsView page combining all components
-- [ ] 4.14 Replace page.tsx boilerplate with full app layout
-- [ ] 4.15 Add loading skeleton states for async content
+- [x] 4.1 Build full-screen backend waking-up loading experience
+- [x] 4.2 Create user/login start screen with guest login option
+- [x] 4.3 Update layout.tsx and application metadata
+- [x] 4.4 Set up global CSS design tokens and Tailwind base styles
+- [x] 4.5 Create TypeScript types matching backend API schemas
+- [x] 4.6 Create API client module with fetch wrapper
+- [x] 4.7 Create useAnalysis and usePolling React hooks
+- [x] 4.8 Build AnalysisInputForm component
+- [x] 4.9 Build TrustScoreCard component
+- [x] 4.10 Build ClaimsTable component with status badges
+- [x] 4.11 Build EvidencePanel component
+- [x] 4.12 Install React Flow and build AgentTimeline component
+- [x] 4.13 Build ModelComparisonTable component
+- [x] 4.14 Build TabNavigation component
+- [x] 4.15 Assemble ResultsView page combining all components
+- [x] 4.16 Replace page.tsx boilerplate with full app layout
+- [x] 4.17 Add loading skeleton states for async content
 
 ### Phase 5 - Integration and End-to-End Testing
-- [ ] 5.1 Set up pytest fixtures and test database
-- [ ] 5.2 Write full-pipeline integration test (happy path)
-- [ ] 5.3 Write integration tests for edge cases and error handling
-- [ ] 5.4 Set up Vitest and React Testing Library in frontend
-- [ ] 5.5 Write frontend unit tests for form and score components
-- [ ] 5.6 Write frontend unit tests for table and panel components
+- [x] 5.1 Set up pytest fixtures and test database
+- [x] 5.2 Write full-pipeline integration test (happy path)
+- [x] 5.3 Write integration tests for edge cases and error handling
+- [x] 5.4 Set up Vitest and React Testing Library in frontend
+- [x] 5.5 Write frontend unit tests for form and score components
+- [x] 5.6 Write frontend unit tests for table and panel components
 
 ### Phase 6 - Database and Storage
 - [x] 6.1 Write production database schema SQL for Supabase
@@ -1056,7 +1058,537 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.1 — Update `layout.tsx` and application metadata
+# Task 4.1 — Build Full-Screen Backend Wake-Up Experience
+
+## Complexity
+
+MEDIUM
+
+## Files
+
+* `frontend/src/components/BackendWakeUpScreen.tsx`
+* `frontend/src/hooks/useBackendHealth.ts`
+* `frontend/src/app/page.tsx`
+
+---
+
+## Goal
+
+Create a cinematic full-screen loading experience that appears only when the backend is cold-starting or unavailable.
+
+The experience should feel intentional, polished, and entertaining rather than like an error state. Users should understand that the server is waking up and see visible progress while waiting.
+
+When the backend becomes available, the loading experience should transition smoothly into the application.
+
+---
+
+## Functional Requirements
+
+### Health Check System
+
+Create a custom hook:
+
+```ts
+frontend/src/hooks/useBackendHealth.ts
+```
+
+Responsibilities:
+
+* Perform an immediate health check against `/health` on mount.
+* Poll `/health` every 3 seconds while unhealthy.
+* Stop polling once healthy.
+* Expose:
+
+```ts
+type BackendHealthState = {
+  isHealthy: boolean;
+  isChecking: boolean;
+};
+```
+
+Behavior:
+
+* Healthy backend → immediately allow app rendering.
+* Unhealthy backend → show wake-up screen.
+* Do not show wake-up screen if the backend responds successfully within the initial check.
+
+---
+
+### App Entry Flow
+
+Update:
+
+```ts
+frontend/src/app/page.tsx
+```
+
+Flow:
+
+```text
+User opens app
+        ↓
+Initial health check
+        ↓
+Backend healthy?
+    ├── YES → Render application immediately
+    └── NO  → Render BackendWakeUpScreen
+```
+
+Additional requirement:
+
+To avoid UI flashing:
+
+```text
+0–2 seconds:
+    Perform health check silently
+
+After 2 seconds:
+    If backend still unavailable
+    Show BackendWakeUpScreen
+```
+
+This prevents healthy backends from briefly displaying the wake-up UI.
+
+---
+
+## Backend Wake-Up Screen
+
+Create:
+
+```tsx
+frontend/src/components/BackendWakeUpScreen.tsx
+```
+
+Full-screen experience.
+
+### Visual Theme
+
+Use:
+
+* Dark background
+* Futuristic operations center aesthetic
+* Spaceship startup sequence feel
+* Terminal-style status logs
+* Smooth animations
+* Professional but playful tone
+
+Suggested styling:
+
+```text
+Background:
+    #050816
+    subtle gradients
+    glowing accents
+
+Typography:
+    clean modern sans-serif
+
+Animations:
+    fade
+    pulse
+    slide-up
+    smooth progress transitions
+```
+
+---
+
+## Hero Section
+
+Large animated heading:
+
+```text
+🚀 Waking up the backend...
+```
+
+Subtext:
+
+```text
+Our server was taking a power nap.
+We're getting it back online.
+```
+
+Add subtle glow/pulse animation to the title.
+
+---
+
+## Simulated Boot Sequence
+
+Display terminal-style startup logs.
+
+Logs should appear progressively.
+
+One new log every:
+
+```text
+2500ms
+```
+
+Log list:
+
+```text
+[✓] Locating sleeping server...
+[✓] Turning on the lights...
+[✓] Brewing emergency coffee...
+[✓] Convincing database to wake up...
+[✓] Feeding server hamsters...
+[✓] Initializing quantum nonsense...
+[✓] Loading absolutely necessary microservices...
+[✓] Connecting to the cloud...
+[✓] Running health checks...
+[✓] Preparing launch sequence...
+[✓] Almost there...
+```
+
+Requirements:
+
+* Fade in each entry.
+* Slight slide-up animation.
+* Preserve previously shown entries.
+* Auto-scroll if necessary.
+
+---
+
+## Progress Bar
+
+Create an animated progress bar.
+
+### Progress Behavior
+
+Progress should be simulated but believable.
+
+#### Stage 1
+
+```text
+0–25%
+```
+
+Move quickly.
+
+Approximate duration:
+
+```text
+5–8 seconds
+```
+
+#### Stage 2
+
+```text
+25–75%
+```
+
+Move slowly.
+
+Approximate duration:
+
+```text
+20–25 seconds
+```
+
+#### Stage 3
+
+```text
+75–95%
+```
+
+Move very slowly.
+
+Approximate duration:
+
+```text
+15–25 seconds
+```
+
+#### Stage 4
+
+```text
+95%
+```
+
+Hold indefinitely.
+
+Never automatically reach:
+
+```text
+100%
+```
+
+until a successful backend health response is received.
+
+---
+
+### Progress Logic
+
+Example:
+
+```ts
+if (progress < 25) {
+  progress += 2;
+}
+else if (progress < 75) {
+  progress += 1;
+}
+else if (progress < 95) {
+  progress += 0.25;
+}
+
+progress = Math.min(progress, 95);
+```
+
+Important:
+
+```text
+Progress must NEVER reach 100% unless the backend is healthy.
+```
+
+---
+
+## Progress Labels
+
+Display beneath the progress bar.
+
+```text
+0–25%
+    Boot sequence started
+
+25–50%
+    Systems coming online
+
+50–75%
+    Database awakening
+
+75–95%
+    Final system checks
+
+95–100%
+    Ready for launch
+```
+
+Transition labels automatically based on current progress.
+
+---
+
+## Rotating Status Messages
+
+Display beneath progress label.
+
+Rotate every:
+
+```text
+3000ms
+```
+
+Messages:
+
+```text
+Finding the server...
+Removing cobwebs...
+Waking up the database...
+Stretching backend muscles...
+Checking pulse...
+Loading brain cells...
+Making sure everything still works...
+Almost ready for launch...
+```
+
+Smooth fade transition between messages.
+
+---
+
+## Success State
+
+When health check succeeds:
+
+1. Immediately stop all loading timers.
+2. Animate progress to:
+
+```text
+100%
+```
+
+3. Display success state.
+
+Success UI:
+
+```text
+✅ Backend Online
+
+All systems operational.
+```
+
+Requirements:
+
+* Green success indicator.
+* Smooth fade-in.
+* Optional checkmark animation.
+* Clear visual confirmation.
+
+---
+
+## Transition To App
+
+After success state appears:
+
+```text
+Wait 1000ms
+```
+
+Then:
+
+```text
+Fade out wake-up screen
+Render application
+```
+
+The transition should feel smooth and intentional.
+
+---
+
+## UX Requirements
+
+The experience should:
+
+* Never feel broken.
+* Never look like an error page.
+* Clearly communicate that the server is waking up.
+* Entertain users during a 40–60 second Render cold start.
+* Feel like a product feature rather than infrastructure debt.
+
+---
+
+## Edge Cases
+
+### Fast Backend
+
+If backend responds within initial health check:
+
+```text
+Do not show wake-up screen.
+Render app immediately.
+```
+
+### Backend Becomes Healthy Mid-Sequence
+
+Example:
+
+```text
+Progress: 63%
+```
+
+Health check succeeds.
+
+Behavior:
+
+```text
+63% → smooth animation → 100%
+Show success state
+Transition into app
+```
+
+### Long Cold Start
+
+If backend takes longer than expected:
+
+```text
+Progress remains capped at 95%
+Continue polling every 3 seconds
+Continue rotating status messages
+Continue displaying logs
+```
+
+Never:
+
+```text
+Show 100%
+Show complete
+Stop animations
+```
+
+until backend is actually healthy.
+
+---
+
+## Acceptance Criteria
+
+### Backend Online
+
+* App loads immediately.
+* Wake-up screen never appears.
+
+### Backend Cold Start
+
+* Wake-up screen appears.
+* Logs animate progressively.
+* Status messages rotate.
+* Progress advances realistically.
+* Progress never reaches 100% before health success.
+
+### Success State
+
+* Shows:
+
+```text
+Backend Online
+All systems operational.
+```
+
+* Progress reaches 100%.
+* Screen fades into application after 1 second.
+
+### UX Quality
+
+* Smooth animations.
+* No flickering.
+* No abrupt transitions.
+* Dark cinematic aesthetic.
+* Feels polished and production-ready.
+
+---
+
+## Tests
+
+Implement and pass:
+
+```text
+test_backend_wake_up_screen_shows_when_backend_unavailable
+
+test_backend_wake_up_screen_skips_when_backend_available
+
+test_backend_wake_up_progress_stays_below_100_until_health_ok
+
+test_backend_wake_up_success_state_transitions_to_app
+```
+
+
+---
+
+### Task 4.2 — Create user/login start screen with guest login option
+**Complexity**: MEDIUM  
+**Files**: `frontend/src/app/page.tsx`, `frontend/src/components/AuthGate.tsx`, `frontend/src/components/GuestLoginCard.tsx`, `frontend/src/lib/auth.ts`  
+**Explanation**: Build the initial entry screen shown before the app continues, letting users sign in or continue as a guest before the backend wake-up flow begins.
+
+**Scope**:
+- Show an initial start screen before the loading experience
+- Provide a clear authenticated login path using Supabase auth
+- Provide a `Continue as guest` option for immediate access
+- Persist the selected mode and carry it into the loading and analysis flow
+- Pass user-mode context into downstream requests so the backend can scope data correctly
+- Keep the start screen accessible, mobile-friendly, and visually consistent with the dark startup sequence
+
+**Acceptance Criteria**:
+- Users can choose authenticated or guest mode before the app proceeds
+- Guest mode does not require sign-in and still reaches the loading sequence
+- The selected mode is preserved for later analysis and polling interactions
+- The start screen feels like part of the same polished onboarding flow, not a separate error gate
+
+**Tests**:
+- `test_start_screen_shows_login_and_guest_options`
+- `test_guest_continue_creates_guest_mode`
+- `test_authenticated_login_sets_user_mode`
+- `test_user_mode_flows_into_loading_and_analysis`
+
+---
+
+### Task 4.3 — Update `layout.tsx` and application metadata
 **Complexity**: LOW  
 **Files**: `frontend/src/app/layout.tsx`  
 **Explanation**: Replace the stock "Create Next App" metadata with the actual product name and description, and set up the Inter font for a cleaner UI.
@@ -1078,7 +1610,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.2 — Set up global CSS design tokens and Tailwind base styles
+### Task 4.4 — Set up global CSS design tokens and Tailwind base styles
 **Complexity**: LOW  
 **Files**: `frontend/src/app/globals.css`  
 **Explanation**: Define CSS custom properties for the color palette (trust score colors: green/yellow/red), typography scale, and spacing that all components will use.
@@ -1100,7 +1632,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.3 — Create TypeScript types matching backend API schemas
+### Task 4.5 — Create TypeScript types matching backend API schemas
 **Complexity**: LOW  
 **Files**: `frontend/src/types/api.ts`  
 **Explanation**: Define TypeScript interfaces for all data structures returned by the backend API, keeping frontend types in sync with Pydantic models.
@@ -1127,7 +1659,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.4 — Create API client module with fetch wrapper
+### Task 4.6 — Create API client module with fetch wrapper
 **Complexity**: LOW  
 **Files**: `frontend/src/lib/api-client.ts`  
 **Explanation**: Centralize all HTTP calls to the backend in a single module, so components never use `fetch` directly.
@@ -1159,7 +1691,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.5 — Create `useAnalysis` and `usePolling` React hooks
+### Task 4.7 — Create `useAnalysis` and `usePolling` React hooks
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/hooks/useAnalysis.ts`, `frontend/src/hooks/usePolling.ts`  
 **Explanation**: Custom hooks that encapsulate the submit → poll → complete flow so components stay declarative.
@@ -1186,7 +1718,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.6 — Build `AnalysisInputForm` component
+### Task 4.8 — Build `AnalysisInputForm` component
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/components/AnalysisInputForm.tsx`  
 **Explanation**: The primary input UI — two textareas (one for the original prompt, one for the AI response) plus a model selector and submit button.
@@ -1213,7 +1745,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.7 — Build `TrustScoreCard` component
+### Task 4.9 — Build `TrustScoreCard` component
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/components/TrustScoreCard.tsx`  
 **Explanation**: Displays the numeric trust score (0–100) in a prominent card with an animated circular progress ring color-coded by risk level.
@@ -1240,7 +1772,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.8 — Build `ClaimsTable` component with status badges
+### Task 4.10 — Build `ClaimsTable` component with status badges
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/components/ClaimsTable.tsx`  
 **Explanation**: A sortable, filterable table listing all extracted claims with their verification status, confidence score, and expandable detail row.
@@ -1269,7 +1801,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.9 — Build `EvidencePanel` component
+### Task 4.11 — Build `EvidencePanel` component
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/components/EvidencePanel.tsx`  
 **Explanation**: A panel displaying all retrieved evidence grouped by claim, with source URLs, snippet text, relevance scores, and source type badges.
@@ -1294,7 +1826,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.10 — Install React Flow and build `AgentTimeline` component
+### Task 4.12 — Install React Flow and build `AgentTimeline` component
 **Complexity**: HIGH  
 **Files**: `frontend/src/components/AgentTimeline.tsx`, `frontend/package.json`  
 **Explanation**: A React Flow canvas showing the five agents as nodes, connected by directed edges, with each node's execution status and timing visible.
@@ -1320,7 +1852,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.11 — Build `ModelComparisonTable` component
+### Task 4.13 — Build `ModelComparisonTable` component
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/components/ModelComparisonTable.tsx`  
 **Explanation**: A comparison table showing side-by-side results for multiple models: trust score, hallucination risk, claim counts per status, and cost estimate.
@@ -1346,7 +1878,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.12 — Build `TabNavigation` component
+### Task 4.14 — Build `TabNavigation` component
 **Complexity**: LOW  
 **Files**: `frontend/src/components/TabNavigation.tsx`  
 **Explanation**: A tab bar allowing users to switch between Claims, Evidence, Agent Timeline, and Model Comparison views in the results panel.
@@ -1373,7 +1905,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.13 — Assemble `ResultsView` page combining all components
+### Task 4.15 — Assemble `ResultsView` page combining all components
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/components/ResultsView.tsx`  
 **Explanation**: The results layout: TrustScoreCard at the top, CritiqueSection below it, then the TabNavigation with all four content panels.
@@ -1399,7 +1931,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.14 — Replace `page.tsx` boilerplate with full app layout
+### Task 4.16 — Replace `page.tsx` boilerplate with full app layout
 **Complexity**: MEDIUM  
 **Files**: `frontend/src/app/page.tsx`  
 **Explanation**: Wire up `AnalysisInputForm`, `useAnalysis` hook, and `ResultsView` into the main page. This is the final assembly of the frontend.
@@ -1425,7 +1957,7 @@ Update this section every time a task is completed.
 
 ---
 
-### Task 4.15 — Add loading skeleton states for async content
+### Task 4.17 — Add loading skeleton states for async content
 **Complexity**: LOW  
 **Files**: `frontend/src/components/Skeleton.tsx`, all result components  
 **Explanation**: Create a reusable `Skeleton` component and integrate it into every result component to prevent jarring layout shifts during data loading.
@@ -1801,12 +2333,12 @@ Update this section every time a task is completed.
 | 1 — Backend Foundation | 1.1–1.11 (11 tasks) | LOW–MEDIUM |
 | 2 — Agent Implementation | 2.1–2.15 (15 tasks) | LOW–HIGH |
 | 3 — API Routes | 3.1–3.8 (8 tasks) | LOW–MEDIUM |
-| 4 — Frontend Components | 4.1–4.15 (15 tasks) | LOW–HIGH |
+| 4 — Frontend Components | 4.1–4.17 (17 tasks) | LOW–HIGH |
 | 5 — Integration & Testing | 5.1–5.6 (6 tasks) | LOW–MEDIUM |
 | 6 — Database & Storage | 6.1–6.2 (2 tasks) | LOW |
 | 7 — Deployment | 7.1–7.6 (6 tasks) | LOW |
 | Corrections — Retrofit Completed Work | C.1–C.11 (11 tasks) | MEDIUM |
-| **Total** | **74 tasks** | |
+| **Total** | **76 tasks** | |
 
 ---
 

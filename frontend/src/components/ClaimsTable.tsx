@@ -1,27 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import type { Claim, ClaimStatus } from "../types/api";
+import { useMemo, useState } from "react";
+import type { Claim, ClaimStatus, Evidence } from "../types/api";
+import { Skeleton, SkeletonRow } from "./Skeleton";
 
 interface ClaimsTableProps {
   claims: Claim[];
+  evidence?: Evidence[];
+  isLoading?: boolean;
 }
 
 const STATUS_CONFIG: Record<ClaimStatus, { label: string; color: string; bg: string }> = {
   SUPPORTED:           { label: "Supported",            color: "var(--color-verified)",   bg: "rgba(34,197,94,0.08)"  },
   PARTIALLY_SUPPORTED: { label: "Partial",              color: "var(--color-uncertain)",  bg: "rgba(245,158,11,0.08)" },
   CONTRADICTED:        { label: "Contradicted",         color: "var(--color-refuted)",    bg: "rgba(239,68,68,0.08)"  },
-  UNSUPPORTED:         { label: "Unsupported",          color: "var(--color-refuted)",    bg: "rgba(239,68,68,0.08)"  },
+  UNSUPPORTED:         { label: "Unsupported",          color: "var(--color-unverified)", bg: "rgba(107,114,128,0.08)" },
   UNVERIFIABLE:        { label: "Unverifiable",         color: "var(--color-unverified)", bg: "rgba(107,114,128,0.08)"},
 };
 
-const ALL_STATUSES: ClaimStatus[] = [
-  "SUPPORTED",
-  "PARTIALLY_SUPPORTED",
-  "CONTRADICTED",
-  "UNSUPPORTED",
-  "UNVERIFIABLE",
-];
+type ClaimsFilter = "ALL" | "SUPPORTED" | "CONTRADICTED" | "UNSUPPORTED";
+type ConfidenceSort = "desc" | "asc";
 
 function StatusBadge({ status }: { status: ClaimStatus }) {
   const cfg = STATUS_CONFIG[status];
@@ -38,8 +36,8 @@ function StatusBadge({ status }: { status: ClaimStatus }) {
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
   const color =
-    pct >= 75 ? "var(--color-risk-low)"
-    : pct >= 45 ? "var(--color-risk-medium)"
+    pct >= 80 ? "var(--color-risk-low)"
+    : pct >= 50 ? "var(--color-risk-medium)"
     : "var(--color-risk-high)";
 
   return (
@@ -55,22 +53,92 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-export function ClaimsTable({ claims }: ClaimsTableProps) {
-  const [filter, setFilter] = useState<ClaimStatus | "ALL">("ALL");
+function ClaimsTableSkeleton() {
+  return (
+    <div className="card p-6 space-y-4" aria-label="claims-table-skeleton">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="space-y-2">
+          <Skeleton width={58} height={12} />
+          <Skeleton width={112} height={12} />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Skeleton width={54} height={26} />
+          <Skeleton width={92} height={26} />
+          <Skeleton width={104} height={26} />
+          <Skeleton width={98} height={26} />
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-border">
+        <div className="grid grid-cols-[56px_1fr_180px_180px] items-center gap-3 border-b border-border bg-surface-high px-4 py-2">
+          <Skeleton width={14} height={12} />
+          <Skeleton width={78} height={12} />
+          <Skeleton width={52} height={12} />
+          <Skeleton width={84} height={12} />
+        </div>
+        {[0, 1, 2, 3].map((index) => (
+          <SkeletonRow key={index} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function ClaimsTable({ claims, evidence = [], isLoading = false }: ClaimsTableProps) {
+  const [filter, setFilter] = useState<ClaimsFilter>("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<ConfidenceSort>("desc");
 
-  const filtered = filter === "ALL" ? claims : claims.filter((c) => c.status === filter);
+  const filteredAndSorted = useMemo(() => {
+    const filtered = claims.filter((claim) => {
+      if (filter === "ALL") return true;
+      if (filter === "SUPPORTED") return claim.status === "SUPPORTED";
+      if (filter === "CONTRADICTED") return claim.status === "CONTRADICTED";
+      return claim.status === "UNSUPPORTED";
+    });
 
-  const counts = ALL_STATUSES.reduce<Record<string, number>>((acc, s) => {
-    acc[s] = claims.filter((c) => c.status === s).length;
-    return acc;
-  }, {});
+    return [...filtered].sort((a, b) => {
+      if (sortDirection === "desc") {
+        return b.confidence - a.confidence;
+      }
+      return a.confidence - b.confidence;
+    });
+  }, [claims, filter, sortDirection]);
+
+  const evidenceByClaimId = useMemo(() => {
+    const map = new Map<string, Evidence[]>();
+    for (const item of evidence) {
+      const current = map.get(item.claimId) ?? [];
+      current.push(item);
+      map.set(item.claimId, current);
+    }
+
+    for (const [claimId, entries] of map.entries()) {
+      entries.sort((a, b) => b.relevanceScore - a.relevanceScore);
+      map.set(claimId, entries);
+    }
+
+    return map;
+  }, [evidence]);
+
+  const counts = useMemo(() => {
+    return {
+      ALL: claims.length,
+      SUPPORTED: claims.filter((c) => c.status === "SUPPORTED").length,
+      CONTRADICTED: claims.filter((c) => c.status === "CONTRADICTED").length,
+      UNSUPPORTED: claims.filter((c) => c.status === "UNSUPPORTED").length,
+    };
+  }, [claims]);
+
+  if (isLoading) {
+    return <ClaimsTableSkeleton />;
+  }
 
   if (claims.length === 0) {
     return (
       <div className="card p-6">
         <p className="label mb-2">Claims</p>
-        <p className="text-sm text-text-muted">No claims extracted.</p>
+        <p className="text-sm text-text-muted">No claims extracted</p>
       </div>
     );
   }
@@ -85,32 +153,26 @@ export function ClaimsTable({ claims }: ClaimsTableProps) {
 
         {/* Filter pills */}
         <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setFilter("ALL")}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              filter === "ALL"
-                ? "bg-accent text-surface font-medium"
-                : "border border-border text-text-secondary hover:border-accent hover:text-accent"
-            }`}
-          >
-            All ({claims.length})
-          </button>
-          {ALL_STATUSES.filter((s) => counts[s] > 0).map((s) => {
-            const cfg = STATUS_CONFIG[s];
+          {([
+            ["ALL", "All"],
+            ["SUPPORTED", "Supported"],
+            ["CONTRADICTED", "Contradicted"],
+            ["UNSUPPORTED", "Unsupported"],
+          ] as Array<[ClaimsFilter, string]>).map(([value, label]) => {
+            const active = filter === value;
             return (
               <button
-                key={s}
+                key={value}
                 type="button"
-                onClick={() => setFilter(s)}
-                className="px-2.5 py-1 rounded text-xs transition-colors"
-                style={
-                  filter === s
-                    ? { background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}` }
-                    : { border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }
-                }
+                aria-pressed={active}
+                onClick={() => setFilter(value)}
+                className={`px-2.5 py-1 rounded text-xs transition-colors ${
+                  active
+                    ? "bg-accent text-surface font-medium"
+                    : "border border-border text-text-secondary hover:border-accent hover:text-accent"
+                }`}
               >
-                {cfg.label} ({counts[s]})
+                {label} ({counts[value]})
               </button>
             );
           })}
@@ -118,55 +180,74 @@ export function ClaimsTable({ claims }: ClaimsTableProps) {
       </div>
 
       {/* Table */}
-      <div className="space-y-2">
-        {filtered.map((claim) => {
+      <div className="overflow-hidden rounded-md border border-border">
+        <div className="grid grid-cols-[56px_1fr_180px_180px] items-center gap-3 border-b border-border bg-surface-high px-4 py-2 text-xs uppercase tracking-wide text-text-secondary">
+          <span>#</span>
+          <span>Claim Text</span>
+          <span>Status</span>
+          <button
+            type="button"
+            onClick={() => setSortDirection((current) => (current === "desc" ? "asc" : "desc"))}
+            className="text-left uppercase tracking-wide hover:text-text-primary"
+          >
+            Confidence {sortDirection === "desc" ? "↓" : "↑"}
+          </button>
+        </div>
+
+        {filteredAndSorted.map((claim, index) => {
           const isOpen = expanded === claim.id;
+          const claimEvidence = evidenceByClaimId.get(claim.id) ?? [];
+
           return (
-            <div
-              key={claim.id}
-              className="rounded-md border border-border overflow-hidden transition-colors hover:border-accent/40"
-            >
-              {/* Row */}
+            <div key={claim.id} className="border-b border-border last:border-b-0">
               <button
                 type="button"
                 onClick={() => setExpanded(isOpen ? null : claim.id)}
-                className="w-full flex items-start gap-3 px-4 py-3 text-left bg-surface-high hover:bg-surface transition-colors"
+                className="grid w-full grid-cols-[56px_1fr_180px_180px] items-start gap-3 px-4 py-3 text-left hover:bg-surface-high/60 transition-colors"
               >
-                {/* Index */}
-                <span className="text-xs text-text-muted mt-0.5 w-5 flex-shrink-0">
-                  {claim.claimIndex + 1}.
+                <span className="text-xs text-text-muted mt-0.5">
+                  {index + 1}
                 </span>
 
-                {/* Claim text */}
-                <span className="flex-1 text-sm text-text-primary leading-relaxed">
+                <span className="text-sm text-text-primary leading-relaxed">
                   {claim.text}
                 </span>
 
-                {/* Right side: badge + confidence + chevron */}
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex items-center gap-2">
                   <StatusBadge status={claim.status} />
+                </div>
+
+                <div className="flex items-center gap-2">
                   <ConfidenceBar value={claim.confidence} />
-                  <span
-                    className="text-text-muted text-xs transition-transform duration-200"
-                    style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-                  >
+                  <span className="text-xs text-text-muted transition-transform" style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                     ▾
                   </span>
                 </div>
               </button>
 
-              {/* Expanded detail */}
-              {isOpen && claim.sourceSpan && (
-                <div className="px-4 py-3 border-t border-border bg-surface">
-                  <p className="label mb-1">Source span</p>
-                  <p className="text-xs text-text-secondary leading-relaxed italic">
-                    "{claim.sourceSpan}"
-                  </p>
+              {isOpen && (
+                <div className="border-t border-border bg-surface px-4 py-3">
+                  <p className="label mb-2">Evidence snippets</p>
+                  {claimEvidence.length === 0 ? (
+                    <p className="text-xs text-text-muted">No evidence snippets for this claim.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {claimEvidence.slice(0, 3).map((item) => (
+                        <li key={item.id} className="rounded border border-border bg-surface-high px-3 py-2 text-xs text-text-secondary leading-relaxed">
+                          {item.snippet}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
+
+        {filteredAndSorted.length === 0 && (
+          <div className="px-4 py-4 text-sm text-text-muted">No claims extracted</div>
+        )}
       </div>
     </div>
   );

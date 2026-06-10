@@ -1,3 +1,5 @@
+import { getStoredUserMode } from "./auth";
+
 const GUEST_SESSION_STORAGE_KEY = "ai_trust_guest_session_id";
 const GUEST_SESSION_TOKEN_STORAGE_KEY = "ai_trust_guest_session_token";
 const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -27,6 +29,13 @@ function getGuestSessionToken(): string | null {
 }
 
 export function getGuestSessionHeaders(): Record<string, string> | null {
+  const userMode = getStoredUserMode();
+  const authToken = typeof window !== "undefined" ? window.sessionStorage.getItem("ai_trust_auth_token") : null;
+
+  if (userMode === "AUTHENTICATED" && (!authToken || !authToken.startsWith("local:"))) {
+    return null;
+  }
+
   const guestSessionId = getOrCreateGuestSessionId();
   const guestSessionToken = getGuestSessionToken();
 
@@ -100,6 +109,15 @@ export function endGuestSession(apiBaseUrl: string = DEFAULT_API_BASE_URL): void
     body: payload,
     keepalive: true,
   });
+}
+
+export function clearGuestSession(): void {
+  if (typeof window === "undefined" || typeof window.sessionStorage === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(GUEST_SESSION_STORAGE_KEY);
+  window.sessionStorage.removeItem(GUEST_SESSION_TOKEN_STORAGE_KEY);
 }
 
 export function registerGuestSessionLifecycle(apiBaseUrl?: string): () => void {

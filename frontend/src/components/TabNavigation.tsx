@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
-export type TabId = "results" | "claims" | "evidence" | "timeline" | "comparison";
+export type TabId = "claims" | "evidence" | "timeline" | "compare" | "history";
 
 interface Tab {
   id: TabId;
   label: string;
-  count?: number;
 }
 
 interface TabNavigationProps {
@@ -15,57 +14,112 @@ interface TabNavigationProps {
   onChange: (tab: TabId) => void;
   counts?: Partial<Record<TabId, number>>;
   disabledTabs?: TabId[];
+  showHistoryTab?: boolean;
 }
 
-const TABS: Tab[] = [
-  { id: "results",    label: "Results"    },
-  { id: "claims",     label: "Claims"     },
-  { id: "evidence",   label: "Evidence"   },
-  { id: "timeline",   label: "Timeline"   },
-  { id: "comparison", label: "Compare"    },
+const BASE_TABS: Tab[] = [
+  { id: "claims", label: "Claims" },
+  { id: "evidence", label: "Evidence" },
+  { id: "timeline", label: "Timeline" },
+  { id: "compare", label: "Compare" },
 ];
+
+const HASH_TO_TAB: Record<string, TabId> = {
+  claims: "claims",
+  evidence: "evidence",
+  timeline: "timeline",
+  compare: "compare",
+  history: "history",
+};
+
+function tabToHash(tab: TabId): string {
+  return `#${tab}`;
+}
 
 export function TabNavigation({
   activeTab,
   onChange,
   counts = {},
   disabledTabs = [],
+  showHistoryTab = false,
 }: TabNavigationProps) {
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
+  const hasAppliedHashRef = useRef(false);
 
-  // Move the sliding indicator to the active tab
+  const tabs = useMemo<Tab[]>(() => {
+    return showHistoryTab
+      ? [...BASE_TABS, { id: "history", label: "History" }]
+      : BASE_TABS;
+  }, [showHistoryTab]);
+
+  const enabledTabs = useMemo(() => {
+    return tabs
+      .map((tab) => tab.id)
+      .filter((tabId) => !disabledTabs.includes(tabId));
+  }, [tabs, disabledTabs]);
+
   useEffect(() => {
-    const el = tabRefs.current[activeTab];
-    if (!el) return;
-    const parent = el.parentElement;
-    if (!parent) return;
-    const parentRect = parent.getBoundingClientRect();
-    const elRect     = el.getBoundingClientRect();
-    setIndicatorStyle({
-      left:  elRect.left  - parentRect.left,
-      width: elRect.width,
-    });
+    if (hasAppliedHashRef.current) return;
+    if (typeof window === "undefined") return;
+
+    const rawHash = window.location.hash.replace(/^#/, "").toLowerCase();
+    const hashTab = HASH_TO_TAB[rawHash];
+    if (!hashTab) {
+      hasAppliedHashRef.current = true;
+      return;
+    }
+
+    if (!tabs.some((tab) => tab.id === hashTab)) {
+      hasAppliedHashRef.current = true;
+      return;
+    }
+
+    if (disabledTabs.includes(hashTab)) {
+      hasAppliedHashRef.current = true;
+      return;
+    }
+
+    if (hashTab !== activeTab) {
+      onChange(hashTab);
+    }
+
+    hasAppliedHashRef.current = true;
+  }, [activeTab, disabledTabs, onChange, tabs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextHash = tabToHash(activeTab);
+    if (window.location.hash === nextHash) return;
+    window.history.replaceState(null, "", nextHash);
   }, [activeTab]);
+
+  const handleArrowNavigation = (direction: "left" | "right") => {
+    if (enabledTabs.length === 0) return;
+    const activeIndex = enabledTabs.indexOf(activeTab);
+    if (activeIndex === -1) {
+      const fallbackTab = enabledTabs[0];
+      onChange(fallbackTab);
+      tabRefs.current[fallbackTab]?.focus();
+      return;
+    }
+
+    const offset = direction === "right" ? 1 : -1;
+    const nextIndex = (activeIndex + offset + enabledTabs.length) % enabledTabs.length;
+    const nextTab = enabledTabs[nextIndex];
+
+    onChange(nextTab);
+    tabRefs.current[nextTab]?.focus();
+  };
 
   return (
     <div className="w-full">
       <div
+        role="tablist"
+        aria-label="Result views"
         className="relative flex items-center border-b border-border overflow-x-auto"
         style={{ scrollbarWidth: "none" }}
       >
-        {/* Sliding underline indicator */}
-        <div
-          className="absolute bottom-0 h-0.5 transition-all duration-300 ease-out"
-          style={{
-            left:       indicatorStyle.left,
-            width:      indicatorStyle.width,
-            background: "var(--color-accent)",
-            boxShadow:  "0 0 8px var(--color-accent)",
-          }}
-        />
-
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive   = tab.id === activeTab;
           const isDisabled = disabledTabs.includes(tab.id);
           const count      = counts[tab.id];
@@ -74,17 +128,33 @@ export function TabNavigation({
             <button
               key={tab.id}
               type="button"
-              ref={(el) => { tabRefs.current[tab.id] = el; }}
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`panel-${tab.id}`}
+              id={`tab-${tab.id}`}
+              tabIndex={isActive ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[tab.id] = el;
+              }}
               onClick={() => !isDisabled && onChange(tab.id)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  handleArrowNavigation("right");
+                } else if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  handleArrowNavigation("left");
+                }
+              }}
               disabled={isDisabled}
               className={`
-                relative flex items-center gap-2 px-4 py-3 text-sm whitespace-nowrap
+                relative flex items-center gap-2 px-4 py-3 text-sm whitespace-nowrap border-b-2
                 transition-colors duration-200 flex-shrink-0
                 ${isActive
-                  ? "text-accent"
+                  ? "text-accent font-semibold border-accent"
                   : isDisabled
-                  ? "text-text-muted cursor-not-allowed opacity-40"
-                  : "text-text-secondary hover:text-text-primary"
+                  ? "text-text-muted cursor-not-allowed opacity-40 border-transparent"
+                  : "text-text-secondary hover:text-text-primary border-transparent"
                 }
               `}
             >
