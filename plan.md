@@ -19,6 +19,7 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - Render startup fix: API routes now lazy-load the analysis workflow, and vector embeddings lazy-load `sentence_transformers`, so Render can bind the health-check port before LangGraph/LangChain/Torch/model imports run.
 - Render startup diagnostics fix: Docker now runs `python -m app.start`, which prints flushed startup milestones, imports the FastAPI app explicitly, and starts Uvicorn from the app object using Render's `PORT`.
 - Frontend deployment fix: API base URL resolution is centralized, production falls back to same-origin `/api/v1` rewrites instead of `localhost:8000`, and Vercel rewrites now target the deployed Render backend.
+- Frontend CORS fix: browser production now prefers the same-origin Vercel API rewrite even when `NEXT_PUBLIC_API_URL` is set, preventing direct cross-origin Render API calls for analyze/history.
 - Deployment CORS fix: backend CORS origin parsing now normalizes trailing slashes, and deployment docs include the exact Render `ALLOWED_ORIGINS` value for the Vercel frontend.
 
 **Cross-cutting requirements (apply to all phases/tasks):**

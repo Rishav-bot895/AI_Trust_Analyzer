@@ -42,7 +42,11 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert config.settings.SUPABASE_JWT_ISSUER == "https://issuer.example"
     assert config.settings.SUPABASE_JWT_AUDIENCE == "audience-example"
     assert config.settings.SUPABASE_JWKS_URL == "https://issuer.example/.well-known/jwks.json"
-    assert config.settings.ALLOWED_ORIGINS == ["http://localhost:3000", "http://localhost:5173"]
+    assert config.settings.ALLOWED_ORIGINS == [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://aitrustanalyszer.vercel.app",
+    ]
 
 
 def test_allowed_origins_normalize_trailing_slashes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -57,7 +61,10 @@ def test_allowed_origins_normalize_trailing_slashes(monkeypatch: pytest.MonkeyPa
 
     config = _reload_config_module(monkeypatch, tmp_path)
 
-    assert config.settings.ALLOWED_ORIGINS == ["https://aitrustanalyszer.vercel.app"]
+    assert config.settings.ALLOWED_ORIGINS == [
+        "https://aitrustanalyszer.vercel.app",
+        "http://localhost:3000",
+    ]
 
 
 def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

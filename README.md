@@ -78,7 +78,7 @@ Backend variables live in `backend/.env`.
 | `SUPABASE_JWT_ISSUER` | No | empty | Backend | Optional issuer claim validation. |
 | `SUPABASE_JWT_AUDIENCE` | No | empty | Backend | Optional audience claim validation. |
 | `SUPABASE_JWKS_URL` | No | derived | Backend | Optional explicit JWKS URL override. |
-| `ALLOWED_ORIGINS` | No | `["http://localhost:3000"]` | Backend | CORS origins as JSON array or comma-separated string. |
+| `ALLOWED_ORIGINS` | No | `["http://localhost:3000","https://aitrustanalyszer.vercel.app"]` | Backend | CORS origins as JSON array or comma-separated string. |
 | `LOG_LEVEL` | No | `INFO` | Backend | Application log level. |
 | `MAX_CLAIMS` | No | `50` | Backend | Maximum extracted claims per analysis. |
 | `VECTOR_EMBEDDING_DIM` | No | `384` | Backend | pgvector embedding dimension. |
@@ -142,13 +142,9 @@ ALLOWED_ORIGINS=["https://aitrustanalyszer.vercel.app"]
 
 Use `frontend` as the Vercel project root.
 
-Set:
+Recommended: leave `NEXT_PUBLIC_API_URL` unset in Vercel and use the `frontend/vercel.json` rewrite to proxy `/api/v1/*` to `https://ai-trust-analyzer.onrender.com/api/v1/*`. The rewrite avoids browser CORS because frontend requests stay same-origin.
 
-```text
-NEXT_PUBLIC_API_URL=https://ai-trust-analyzer.onrender.com
-```
-
-Or leave `NEXT_PUBLIC_API_URL` unset and use the `frontend/vercel.json` rewrite to proxy `/api/v1/*` to `https://ai-trust-analyzer.onrender.com/api/v1/*`. The rewrite avoids browser CORS because frontend requests stay same-origin.
+If `NEXT_PUBLIC_API_URL` is set in Vercel, browser production still uses the same-origin rewrite. Server-side code can use the variable if needed.
 
 ## CI
 

@@ -12,6 +12,20 @@ def _normalize_origin(value: str) -> str:
 	return value.strip().rstrip("/")
 
 
+DEFAULT_ALLOWED_ORIGINS = [
+	"http://localhost:3000",
+	"https://aitrustanalyszer.vercel.app",
+]
+
+
+def _with_default_allowed_origins(origins: list[str]) -> list[str]:
+	merged: list[str] = []
+	for origin in [*origins, *DEFAULT_ALLOWED_ORIGINS]:
+		if origin and origin not in merged:
+			merged.append(origin)
+	return merged
+
+
 class Settings(BaseSettings):
 	GEMINI_API_KEY: str
 	TAVILY_API_KEY: str
@@ -78,24 +92,30 @@ class Settings(BaseSettings):
 	@classmethod
 	def parse_allowed_origins(cls, value: Any) -> list[str]:
 		if value is None:
-			return ["http://localhost:3000"]
+			return DEFAULT_ALLOWED_ORIGINS
 
 		if isinstance(value, list):
-			return [normalized for item in value if (normalized := _normalize_origin(str(item)))]
+			return _with_default_allowed_origins(
+				[normalized for item in value if (normalized := _normalize_origin(str(item)))]
+			)
 
 		if isinstance(value, str):
 			raw = value.strip()
 			if not raw:
-				return ["http://localhost:3000"]
+				return DEFAULT_ALLOWED_ORIGINS
 
 			# Support both JSON array strings and comma-separated values.
 			if raw.startswith("["):
 				parsed = json.loads(raw)
 				if not isinstance(parsed, list):
 					raise ValueError("ALLOWED_ORIGINS JSON value must be an array")
-				return [normalized for item in parsed if (normalized := _normalize_origin(str(item)))]
+				return _with_default_allowed_origins(
+					[normalized for item in parsed if (normalized := _normalize_origin(str(item)))]
+				)
 
-			return [normalized for item in raw.split(",") if (normalized := _normalize_origin(item))]
+			return _with_default_allowed_origins(
+				[normalized for item in raw.split(",") if (normalized := _normalize_origin(item))]
+			)
 
 		raise ValueError("ALLOWED_ORIGINS must be a list or string")
 
