@@ -20,7 +20,11 @@ def _database_url_for_runtime() -> str:
     return settings.DATABASE_URL
 
 
-engine = create_async_engine(_database_url_for_runtime(), future=True)
+engine = create_async_engine(
+    _database_url_for_runtime(),
+    future=True,
+    connect_args={"statement_cache_size": 0},
+)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

@@ -1,26 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Instrument+Serif:ital@0;1&display=swap');
 @import "tailwindcss";
 
+
+/* ── Design Tokens ──────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --color-surface:        #0a0e1a;
+  --color-surface-raised: #0f1524;
+  --color-surface-high:   #151c30;
+  --color-border:         #1e2a42;
+  --color-border-subtle:  #141d30;
+
+  /* Text */
+  --color-text-primary:   #e8edf5;
+  --color-text-secondary: #7a8ba8;
+  --color-text-muted:     #3d4f6b;
+
+  /* Accent — amber/gold for "analysis in progress" energy */
+  --color-accent:         #f0a500;
+  --color-accent-dim:     #7a5200;
+  --color-accent-glow:    rgba(240, 165, 0, 0.12);
+
+  /* Status colours */
+  --color-verified:       #22c55e;  /* green  */
+  --color-refuted:        #ef4444;  /* red    */
+  --color-uncertain:      #f59e0b;  /* amber  */
+  --color-unverified:     #6b7280;  /* grey   */
+  --color-risk-low:       #22c55e;
+  --color-risk-medium:    #f59e0b;
+  --color-risk-high:      #ef4444;
+  --color-risk-unknown:   #6b7280;
+
+  /* Typography */
+  --font-mono:   var(--font-mono,   "DM Mono",        monospace);
+  --font-serif:  var(--font-serif,  "Instrument Serif", serif);
+
+  /* Spacing scale */
+  --radius-sm:  4px;
+  --radius-md:  8px;
+  --radius-lg:  12px;
 }
 
+/* ── Tailwind custom theme ──────────────────────────────────── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface:        var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-surface-high:   var(--color-surface-high);
+  --color-border:         var(--color-border);
+  --color-border-subtle:  var(--color-border-subtle);
+  --color-text-primary:   var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted:     var(--color-text-muted);
+  --color-accent:         var(--color-accent);
+  --color-accent-dim:     var(--color-accent-dim);
+  --color-verified:       var(--color-verified);
+  --color-refuted:        var(--color-refuted);
+  --color-uncertain:      var(--color-uncertain);
+  --color-unverified:     var(--color-unverified);
+  --color-risk-low:       var(--color-risk-low);
+  --color-risk-medium:    var(--color-risk-medium);
+  --color-risk-high:      var(--color-risk-high);
+  --color-risk-unknown:   var(--color-risk-unknown);
+  --font-family-mono:     var(--font-mono);
+  --font-family-serif:    var(--font-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ── Base resets ────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { color-scheme: dark; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  /* Subtle grid texture for depth */
+  background-image:
+    linear-gradient(var(--color-border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border-subtle) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* ── Selection ──────────────────────────────────────────────── */
+::selection {
+  background: var(--color-accent-glow);
+  color: var(--color-accent);
+}
+
+/* ── Utility classes used across components ─────────────────── */
+.card {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.card-high {
+  background: var(--color-surface-high);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.accent-line {
+  border-left: 2px solid var(--color-accent);
+  padding-left: 0.75rem;
 }
