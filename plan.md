@@ -15,8 +15,9 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - Verification: `npm.cmd test -- --run`, `npm.cmd run lint`, and `npm.cmd run build` all pass.
 - Phase 7 deployment artifacts added: backend Dockerfile using Python 3.14.2, docker-compose, GitHub Actions CI, Vercel config, and manual Render deployment docs. No `render.yaml` is required.
 - Phase 7 verification: backend tests pass, frontend lint/build/tests pass, `docker compose config` renders, and `frontend/vercel.json` parses. Docker image build could not be executed locally because Docker Desktop Linux engine was not running.
-- Render runtime fix: backend Docker image now uses the backend-native `/app/app` layout, starts `app.main:app`, echoes the selected port, and binds Uvicorn to `${PORT:-8000}` so Render can detect the open web service port while local Docker still defaults to port 8000.
+- Render runtime fix: backend Docker image now uses the backend-native `/app/app` layout and a startup entrypoint that binds Uvicorn to Render's `PORT` while local Docker still defaults to port 8000.
 - Render startup fix: API routes now lazy-load the analysis workflow, and vector embeddings lazy-load `sentence_transformers`, so Render can bind the health-check port before LangGraph/LangChain/Torch/model imports run.
+- Render startup diagnostics fix: Docker now runs `python -m app.start`, which prints flushed startup milestones, imports the FastAPI app explicitly, and starts Uvicorn from the app object using Render's `PORT`.
 
 **Cross-cutting requirements (apply to all phases/tasks):**
 - Vector storage and similarity search must use Supabase PostgreSQL with pgvector only (no ChromaDB runtime dependency).

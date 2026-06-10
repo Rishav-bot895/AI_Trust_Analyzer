@@ -121,13 +121,13 @@ Recommended Render settings:
 | Root directory | `backend` |
 | Dockerfile path | `backend/Dockerfile` if root is repository root, or `Dockerfile` if root is `backend` |
 | Health check path | `/api/v1/health` |
-| Port binding | The Dockerfile starts Uvicorn with `${PORT:-8000}`. Render supplies `PORT`; local Docker defaults to `8000`. |
+| Port binding | The Dockerfile runs `python -m app.start`, which starts Uvicorn with Render's `PORT`; local Docker defaults to `8000`. |
 | Python version note | Local venv uses Python 3.14.2; Docker image uses `python:3.14.2-slim`. |
 
 Leave Render's Start Command blank when using the Docker runtime so the Dockerfile `CMD` runs. If you do override it, use:
 
 ```sh
-python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+python -m app.start
 ```
 
 Set all backend environment variables from the table above in Render. Do not commit secrets.
