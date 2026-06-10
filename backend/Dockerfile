@@ -9,13 +9,13 @@ COPY requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt
 
-COPY app ./backend/app
-COPY alembic ./backend/alembic
-COPY alembic.ini ./backend/alembic.ini
-COPY db ./backend/db
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
+COPY db ./db
 
 ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "echo \"Starting AI Trust Analyzer on port ${PORT:-8000}\" && python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

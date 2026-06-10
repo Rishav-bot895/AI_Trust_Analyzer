@@ -15,7 +15,7 @@ This is decision-support, not definitive hallucination detection; outputs must i
 - Verification: `npm.cmd test -- --run`, `npm.cmd run lint`, and `npm.cmd run build` all pass.
 - Phase 7 deployment artifacts added: backend Dockerfile using Python 3.14.2, docker-compose, GitHub Actions CI, Vercel config, and manual Render deployment docs. No `render.yaml` is required.
 - Phase 7 verification: backend tests pass, frontend lint/build/tests pass, `docker compose config` renders, and `frontend/vercel.json` parses. Docker image build could not be executed locally because Docker Desktop Linux engine was not running.
-- Render runtime fix: backend Docker CMD now binds Uvicorn to `${PORT:-8000}` so Render can detect the open web service port while local Docker still defaults to port 8000.
+- Render runtime fix: backend Docker image now uses the backend-native `/app/app` layout, starts `app.main:app`, echoes the selected port, and binds Uvicorn to `${PORT:-8000}` so Render can detect the open web service port while local Docker still defaults to port 8000.
 
 **Cross-cutting requirements (apply to all phases/tasks):**
 - Vector storage and similarity search must use Supabase PostgreSQL with pgvector only (no ChromaDB runtime dependency).
