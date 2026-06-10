@@ -30,7 +30,10 @@ def _base_payload(models: list[str]) -> dict[str, object]:
 
 
 def test_compare_two_models_returns_two_analyses(monkeypatch):
+    processing_models: list[str] = []
+
     async def fake_run_analysis(*, analysis_id: str, prompt: str, response: str, model_name: str):
+        processing_models.append(model_name)
         return {
             "analysis_id": analysis_id,
             "prompt": prompt,
@@ -63,43 +66,32 @@ def test_compare_two_models_returns_two_analyses(monkeypatch):
     assert payload["analyses"][1]["status"] == "COMPLETED"
     assert payload["analyses"][0]["trust_score"] == 82.0
     assert payload["analyses"][1]["trust_score"] == 82.0
+    assert [item["model_name"] for item in payload["analyses"]] == [
+        "gemini-3.1-flash-lite",
+        "gemini-2.0-flash",
+    ]
+    assert processing_models == ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]
 
 
-def test_compare_one_model_fails_others_continue(monkeypatch):
+def test_compare_processing_failure_returns_failed_analysis(monkeypatch):
     async def fake_run_analysis(*, analysis_id: str, prompt: str, response: str, model_name: str):
-        if model_name == "broken-model":
-            raise RuntimeError("model unavailable")
-        return {
-            "analysis_id": analysis_id,
-            "prompt": prompt,
-            "response": response,
-            "model_name": model_name,
-            "claims": [],
-            "evidence": [],
-            "verified_claims": [],
-            "critique": "No issues",
-            "trust_score": 77.0,
-            "hallucination_risk": "MEDIUM",
-            "verdict": f"{model_name} verdict",
-            "timeline": [],
-            "error": None,
-        }
+        raise RuntimeError("processing unavailable")
 
     monkeypatch.setattr("app.api.routes.comparison.run_analysis", fake_run_analysis)
 
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/compare",
-            json=_base_payload(["gemini-3.1-flash-lite", "broken-model"]),
+            json=_base_payload(["gpt-4o"]),
             headers={"Authorization": f"Bearer {_jwt_for('compare-user')}"},
         )
 
     payload = response.json()
     assert response.status_code == 200
-    assert len(payload["analyses"]) == 2
-    assert payload["analyses"][0]["status"] == "COMPLETED"
-    assert payload["analyses"][1]["status"] == "FAILED"
-    assert payload["analyses"][1]["error"] == "model unavailable"
+    assert len(payload["analyses"]) == 1
+    assert payload["analyses"][0]["status"] == "FAILED"
+    assert payload["analyses"][0]["model_name"] == "gpt-4o"
+    assert payload["analyses"][0]["error"] == "processing unavailable"
 
 
 def test_compare_concurrent_execution(monkeypatch):
@@ -144,5 +136,6 @@ def test_compare_concurrent_execution(monkeypatch):
     payload = response.json()
     assert response.status_code == 200
     assert [item["status"] for item in payload["analyses"]] == ["COMPLETED", "COMPLETED"]
-    assert set(started) == {"model-a", "model-b"}
-    assert set(finished) == {"model-a", "model-b"}
+    assert started == ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]
+    assert finished == ["gemini-3.1-flash-lite", "gemini-3.1-flash-lite"]
+    assert [item["model_name"] for item in payload["analyses"]] == ["model-a", "model-b"]

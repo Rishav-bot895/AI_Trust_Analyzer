@@ -47,6 +47,9 @@ export interface TimelineEvent {
 export interface AnalysisResponse {
   id: string;
   status: AnalysisStatus;
+  prompt: string | null;
+  response: string | null;
+  modelName: string | null;
   trustScore: number | null;
   hallucinationRisk: HallucinationRisk | null;
   claims: Claim[];

@@ -4,10 +4,13 @@ import { describe, expect, test } from "vitest";
 import { ModelComparisonTable } from "../ModelComparisonTable";
 import type { AnalysisResponse } from "../../types/api";
 
-function createAnalysis(score: number | null): AnalysisResponse {
+function createAnalysis(score: number | null, modelName: string | null = null): AnalysisResponse {
   return {
     id: `analysis-${score ?? "null"}`,
     status: "COMPLETED",
+    prompt: "Prompt",
+    response: "Response",
+    modelName,
     trustScore: score,
     hallucinationRisk: score === null ? "UNKNOWN" : score >= 80 ? "LOW" : score >= 50 ? "MEDIUM" : "HIGH",
     claims: [
@@ -56,7 +59,18 @@ describe("ModelComparisonTable", () => {
     );
 
     expect(screen.getByText("Model Beta")).toBeInTheDocument();
-    expect(screen.getByText("★ Best")).toBeInTheDocument();
+    expect(screen.getByText("Best")).toBeInTheDocument();
+  });
+
+  test("test_comparison_prefers_response_model_name_from_analysis", () => {
+    render(
+      <ModelComparisonTable
+        models={["Fallback"]}
+        analyses={[createAnalysis(88, "claude-sonnet")]}
+      />,
+    );
+
+    expect(screen.getByText("Claude Sonnet")).toBeInTheDocument();
   });
 
   test("test_comparison_shows_delta", () => {

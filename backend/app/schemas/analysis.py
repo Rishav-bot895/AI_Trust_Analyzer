@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .agent_state import TimelineEvent
 from .claim import Claim
 from .evidence import Evidence
 
@@ -33,9 +34,10 @@ class AnalysisRequest(BaseModel):
     """AI-generated response text, required and capped at 10000 characters."""
 
     model_name: str = Field(
-        default="gemini-3.1-flash-lite", description="Model used for analysis execution"
+        default="gemini-3.1-flash-lite",
+        description="Response-generation model selected by the user",
     )
-    """Model used to run the analysis pipeline."""
+    """Model that generated the response being analyzed."""
 
     include_comparison: bool = Field(
         default=False, description="Whether to include multi-model comparison"
@@ -51,6 +53,15 @@ class AnalysisResponse(BaseModel):
 
     status: AnalysisStatus = Field(..., description="Current analysis execution status")
     """Current analysis execution status."""
+
+    prompt: str | None = Field(default=None, description="Original prompt that produced the response")
+    """Original prompt that produced the analyzed response."""
+
+    response: str | None = Field(default=None, description="AI response text that was analyzed")
+    """AI response text that was analyzed."""
+
+    model_name: str | None = Field(default=None, description="Response-generation model selected by the user")
+    """Model that generated the analyzed response."""
 
     trust_score: float | None = Field(
         default=None, description="Overall trust score in the range 0-100"
@@ -69,6 +80,9 @@ class AnalysisResponse(BaseModel):
         default_factory=list, description="Retrieved evidence items"
     )
     """Retrieved evidence items linked to claims."""
+
+    timeline: list["TimelineEvent"] = Field(default_factory=list, description="Agent execution timeline")
+    """Recorded agent execution events in order."""
 
     critique: str | None = Field(
         default=None, description="Critic agent narrative assessment"
@@ -96,10 +110,14 @@ class AnalysisResponse(BaseModel):
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "status": "COMPLETED",
+                "prompt": "Explain Apollo 11",
+                "response": "Apollo 11 landed on the Moon in 1969.",
+                "model_name": "gpt-4o",
                 "trust_score": 81.0,
                 "hallucination_risk": "LOW",
                 "claims": [],
                 "evidence": [],
+                "timeline": [],
                 "critique": "No major logical issues detected.",
                 "verdict": "The response appears mostly trustworthy.",
                 "created_at": "2026-01-01T00:00:00Z",

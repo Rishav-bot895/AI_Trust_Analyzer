@@ -87,18 +87,25 @@ def _decode_supabase_jwt(token: str) -> dict[str, object]:
 def _extract_authenticated_user_id(authorization: str) -> str:
     """Decode and verify Supabase JWT, returning authenticated user id."""
     scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
+    token = token.strip()
+    if scheme.lower() != "bearer" or not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header must be in the format: Bearer <token>",
+            detail="Authentication required.",
+        )
+
+    if token.count(".") != 2 or any(not segment for segment in token.split(".")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
         )
 
     try:
-        payload = _decode_supabase_jwt(token.strip())
+        payload = _decode_supabase_jwt(token)
     except (InvalidTokenError, PyJWKClientError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication token: {exc}",
+            detail="Session expired. Please sign in again.",
         ) from exc
 
     user_id = payload.get("sub")

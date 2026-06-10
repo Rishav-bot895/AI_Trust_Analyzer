@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getAuthenticatedHistory } from "../lib/api-client";
+import { getAnalysisHistory } from "../lib/api-client";
 import type { AnalysisListItem } from "../types/api";
 
 interface UseHistoryState {
@@ -12,23 +12,24 @@ interface UseHistoryState {
   reload: () => Promise<void>;
 }
 
-export function useHistory(authToken: string | null): UseHistoryState {
+export function useHistory(enabled: boolean, authToken: string | null): UseHistoryState {
   const [history, setHistory] = useState<AnalysisListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    if (!authToken) {
-      setHistory([]);
-      setError(null);
-      return;
-    }
-
     setIsLoading(true);
     setError(null);
 
+    if (!enabled) {
+      setHistory([]);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const items = await getAuthenticatedHistory(authToken, { limit: 10, offset: 0 });
+      const items = await getAnalysisHistory(authToken, { limit: 10, offset: 0 });
       setHistory(items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load history.");
@@ -36,7 +37,7 @@ export function useHistory(authToken: string | null): UseHistoryState {
     } finally {
       setIsLoading(false);
     }
-  }, [authToken]);
+  }, [authToken, enabled]);
 
   useEffect(() => {
     queueMicrotask(() => {

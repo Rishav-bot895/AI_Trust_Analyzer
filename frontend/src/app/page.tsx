@@ -8,7 +8,6 @@ import { ResultsView } from "../components/ResultsView";
 import { ResultsSkeleton, ShimmerStyles } from "../components/SkeletonLoader";
 import { useAnalysis } from "../hooks/useAnalysis";
 import { useBackendHealth } from "../hooks/useBackendHealth";
-import { compareModels } from "../lib/api-client";
 import {
   clearStoredAuthToken,
   clearStoredUserMode,
@@ -18,9 +17,8 @@ import {
   setStoredUserMode,
 } from "../lib/auth";
 import { clearGuestSession, initializeGuestSession } from "../lib/guest-session";
-import type { AnalysisRequest, ComparisonResponse, UserMode } from "../types/api";
+import type { AnalysisRequest, UserMode } from "../types/api";
 
-const COMPARISON_MODELS = ["gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet"];
 const WAKE_SCREEN_DELAY_MS = 2000;
 
 type AppState = "idle" | "analyzing" | "done" | "error";
@@ -36,7 +34,6 @@ export default function Home() {
   const { phase, result, error, submit, reset } = useAnalysis();
   const [selectedMode, setSelectedMode] = useState<UserMode | null>(() => getStoredUserMode());
   const [authToken, setAuthToken] = useState<string | null>(() => getStoredAuthToken());
-  const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
   const [showWakeScreen, setShowWakeScreen] = useState(false);
   const [backendGateDone, setBackendGateDone] = useState(false);
   const [guestSessionReady, setGuestSessionReady] = useState(() => {
@@ -113,7 +110,6 @@ export default function Home() {
     setStoredAuthToken(token);
     setSelectedMode("AUTHENTICATED");
     setAuthToken(token);
-    setComparison(null);
     setShowWakeScreen(false);
     setBackendGateDone(false);
     setGuestSessionReady(!token.startsWith("local:"));
@@ -127,7 +123,6 @@ export default function Home() {
     setStoredUserMode("GUEST");
     setSelectedMode("GUEST");
     setAuthToken(null);
-    setComparison(null);
     setShowWakeScreen(false);
     setBackendGateDone(false);
     setGuestSessionReady(false);
@@ -135,19 +130,7 @@ export default function Home() {
   }
 
   async function handleSubmit(request: AnalysisRequest) {
-    setComparison(null);
     await submit(request);
-
-    try {
-      const comp = await compareModels({
-        prompt: request.prompt,
-        response: request.response,
-        models: COMPARISON_MODELS,
-      });
-      setComparison(comp);
-    } catch {
-      // Comparison is non-critical, so the primary result remains usable.
-    }
   }
 
   if (!selectedMode || (selectedMode === "AUTHENTICATED" && !authToken)) {
@@ -190,7 +173,6 @@ export default function Home() {
                 clearStoredAuthToken();
                 clearGuestSession();
                 reset();
-                setComparison(null);
                 setShowWakeScreen(false);
                 setBackendGateDone(false);
                 setGuestSessionReady(false);
@@ -207,7 +189,6 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   reset();
-                  setComparison(null);
                 }}
                 className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
               >
@@ -255,7 +236,6 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   reset();
-                  setComparison(null);
                 }}
                 className="rounded border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
               >
@@ -269,9 +249,7 @@ export default function Home() {
           <section className="results-slide-in" aria-label="Analysis results">
             <ResultsView
               result={result}
-              comparison={comparison ?? undefined}
-              comparisonModels={COMPARISON_MODELS}
-              showHistoryTab={selectedMode === "AUTHENTICATED"}
+              showHistoryTab={Boolean(selectedMode)}
               authToken={authToken}
             />
           </section>

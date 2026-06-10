@@ -1,4 +1,4 @@
-"""Tests for authenticated-only analysis history endpoint."""
+"""Tests for requester-scoped analysis history endpoint."""
 
 from __future__ import annotations
 
@@ -70,14 +70,18 @@ def _db_url(tmp_path: Path, name: str) -> str:
     return f"sqlite+aiosqlite:///{(tmp_path / f'{name}.db').as_posix()}"
 
 
-def test_history_requires_authenticated_user(tmp_path: Path):
-    engine = create_async_engine(_db_url(tmp_path, "history_guest_forbidden"))
+def test_history_returns_guest_session_records(tmp_path: Path):
+    engine = create_async_engine(_db_url(tmp_path, "history_guest_scoped"))
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    seeded = {"done": False}
 
     async def override_get_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         async with session_factory() as session:
+            if not seeded["done"]:
+                await _seed_history(session)
+                seeded["done"] = True
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
@@ -85,16 +89,19 @@ def test_history_requires_authenticated_user(tmp_path: Path):
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/v1/analyze/history",
-                headers={
-                    "X-Guest-Session-Id": "guest-xyz",
-                    "X-Guest-Session-Token": create_guest_session_token("guest-xyz"),
-                },
-            )
+                    "/api/v1/analyze/history",
+                    headers={
+                        "X-Guest-Session-Id": "guest-1",
+                        "X-Guest-Session-Token": create_guest_session_token("guest-1"),
+                    },
+                )
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 403
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["trust_score"] == 70.0
 
 
 def test_history_returns_only_authenticated_users_records(tmp_path: Path):

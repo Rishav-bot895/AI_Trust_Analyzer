@@ -28,6 +28,9 @@ vi.mock("@xyflow/react", () => ({
 const analysisFixture: AnalysisResponse = {
   id: "analysis-1",
   status: "COMPLETED",
+  prompt: "Explain the Apollo 11 landing.",
+  response: "Apollo 11 landed on the Moon in 1969 and returned safely.",
+  modelName: "gpt-4o",
   trustScore: 86,
   hallucinationRisk: "LOW",
   claims: [
@@ -75,6 +78,7 @@ const comparisonFixture: ComparisonResponse = {
     {
       ...analysisFixture,
       id: "analysis-2",
+      modelName: "claude-sonnet",
       trustScore: 72,
       hallucinationRisk: "MEDIUM",
       verdict: "Mostly supported with caveats.",
@@ -101,6 +105,10 @@ describe("ResultsView", () => {
     expect(screen.getByText("LOW RISK")).toBeInTheDocument();
     expect(screen.getByText("86")).toBeInTheDocument();
     expect(screen.getByText("The response is well supported.")).toBeInTheDocument();
+    expect(screen.getByText("Original Input")).toBeInTheDocument();
+    expect(screen.getByText("Explain the Apollo 11 landing.")).toBeInTheDocument();
+    expect(screen.getByText("Apollo 11 landed on the Moon in 1969 and returned safely.")).toBeInTheDocument();
+    expect(screen.getByText("Response model: GPT-4o")).toBeInTheDocument();
   });
 
   test("test_results_view_renders_all_tabs", async () => {
@@ -127,10 +135,12 @@ describe("ResultsView", () => {
     expect(screen.getByText("NASA states Apollo 11 landed in July 1969.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /Timeline/i }));
-    expect(screen.getByText("Extractor")).toBeInTheDocument();
+    expect(screen.getAllByText("Extractor").length).toBeGreaterThan(0);
+    expect(screen.getByText("response text")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /Compare/i }));
-    expect(screen.getByText("Model A")).toBeInTheDocument();
+    expect(screen.getByText("GPT-4o")).toBeInTheDocument();
+    expect(screen.getByText("Claude Sonnet")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /History/i }));
     expect(screen.getByText("Claim Summary")).toBeInTheDocument();
@@ -150,5 +160,18 @@ describe("ResultsView", () => {
       screen.getByRole("heading", { level: 2, name: "Logical Issues" }),
     ).toBeInTheDocument();
     expect(screen.getByText("No logical issues detected.")).toBeInTheDocument();
+  });
+
+  test("test_timeline_tab_shows_empty_state_when_data_missing", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "#claims");
+
+    render(<ResultsView analysis={{ ...analysisFixture, timeline: [] }} />);
+
+    const timelineTab = screen.getByRole("tab", { name: /Timeline/i });
+    expect(timelineTab).not.toBeDisabled();
+
+    await user.click(timelineTab);
+    expect(screen.getByText("Timeline data not available for this analysis.")).toBeInTheDocument();
   });
 });

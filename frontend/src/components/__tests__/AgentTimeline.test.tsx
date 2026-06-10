@@ -27,40 +27,38 @@ vi.mock("@xyflow/react", () => ({
   Background: () => null,
 }));
 
+function extractorEvent(): TimelineEvent {
+  return {
+    agent: "claim_extractor",
+    startedAt: "2026-06-10T10:00:00.000Z",
+    completedAt: "2026-06-10T10:00:01.500Z",
+    inputSummary: "response text",
+    outputSummary: "claims extracted",
+  };
+}
+
 describe("AgentTimeline", () => {
   test("test_timeline_renders_five_nodes", () => {
-    const timeline: TimelineEvent[] = [];
+    render(<AgentTimeline timeline={[extractorEvent()]} />);
 
-    render(<AgentTimeline timeline={timeline} />);
-
-    expect(screen.getByText("Extractor")).toBeInTheDocument();
-    expect(screen.getByText("Retriever")).toBeInTheDocument();
-    expect(screen.getByText("Verifier")).toBeInTheDocument();
-    expect(screen.getByText("Critic")).toBeInTheDocument();
-    expect(screen.getByText("Judge")).toBeInTheDocument();
+    expect(screen.getAllByText("Extractor").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Retriever").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Verifier").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Critic").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Judge").length).toBeGreaterThan(0);
     expect(screen.getByText("edges:4")).toBeInTheDocument();
   });
 
-  test("test_timeline_pending_shows_waiting", () => {
+  test("test_timeline_empty_state", () => {
     render(<AgentTimeline timeline={[]} />);
 
-    expect(screen.getAllByText("waiting").length).toBe(5);
+    expect(screen.getByText("Timeline data not available for this analysis.")).toBeInTheDocument();
   });
 
   test("test_timeline_completed_node_shows_duration", () => {
-    const timeline: TimelineEvent[] = [
-      {
-        agent: "claim_extractor",
-        startedAt: "2026-06-10T10:00:00.000Z",
-        completedAt: "2026-06-10T10:00:01.500Z",
-        inputSummary: "response text",
-        outputSummary: "claims extracted",
-      },
-    ];
+    render(<AgentTimeline timeline={[extractorEvent()]} />);
 
-    render(<AgentTimeline timeline={timeline} />);
-
-    expect(screen.getByText("1.5s")).toBeInTheDocument();
-    expect(screen.getByLabelText("Extractor status")).toHaveTextContent("✓");
+    expect(screen.getAllByText("1.5s").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Extractor status")).toHaveTextContent("OK");
   });
 });

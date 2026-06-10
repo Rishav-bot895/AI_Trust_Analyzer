@@ -58,7 +58,7 @@ def test_post_analyze_returns_202(tmp_path: Path, monkeypatch):
                 json={
                     "prompt": "Explain gravity",
                     "response": "Gravity attracts masses toward each other.",
-                    "model_name": "gemini-3.1-flash-lite",
+                    "model_name": "gpt-4o",
                 },
                 headers={"Authorization": f"Bearer {_jwt_for('user-123')}"},
             )
@@ -91,7 +91,7 @@ def test_post_analyze_returns_id_and_pending_status(tmp_path: Path, monkeypatch)
                 json={
                     "prompt": "Explain gravity",
                     "response": "Gravity attracts masses toward each other.",
-                    "model_name": "gemini-3.1-flash-lite",
+                    "model_name": "gpt-4o",
                 },
                 headers={"Authorization": f"Bearer {_jwt_for('user-abc')}"},
             )
@@ -112,6 +112,8 @@ def test_post_analyze_returns_id_and_pending_status(tmp_path: Path, monkeypatch)
     assert saved.id == payload["id"]
     assert saved.status == "PENDING"
     assert saved.prompt == "Explain gravity"
+    assert saved.response == "Gravity attracts masses toward each other."
+    assert saved.model_name == "gpt-4o"
 
 
 def test_post_analyze_invalid_body_returns_422(tmp_path: Path, monkeypatch):
@@ -180,7 +182,7 @@ def test_post_analyze_background_task_fires(tmp_path: Path, monkeypatch):
     assert response.status_code == 202
     assert len(calls) == 1
     assert calls[0]["analysis_id"] == response.json()["id"]
-    assert calls[0]["model_name"] == "gemini-3.1-flash-lite"
+    assert calls[0]["response_model_name"] == "gemini-3.1-flash-lite"
 
 
 def test_get_analysis_not_found_returns_404(tmp_path: Path):
@@ -271,11 +273,22 @@ def test_get_analysis_completed_returns_full_result(tmp_path: Path):
                 is_guest=False,
                 prompt="Prompt",
                 response="Response",
-                model_name="gemini-3.1-flash-lite",
+                model_name="gpt-4o",
                 trust_score=88.0,
                 hallucination_risk="LOW",
                 critique="No issues.",
                 verdict="Mostly trustworthy.",
+                timeline=__import__("json").dumps(
+                    [
+                        {
+                            "agent": "extractor",
+                            "started_at": "2026-01-01T00:00:00Z",
+                            "completed_at": "2026-01-01T00:00:01Z",
+                            "input_summary": "response text",
+                            "output_summary": "1 claim",
+                        }
+                    ]
+                ),
                 completed_at=datetime.now(timezone.utc),
             )
             session.add(analysis)
@@ -321,6 +334,9 @@ def test_get_analysis_completed_returns_full_result(tmp_path: Path):
     payload = response.json()
     assert response.status_code == 200
     assert payload["status"] == "COMPLETED"
+    assert payload["prompt"] == "Prompt"
+    assert payload["response"] == "Response"
+    assert payload["model_name"] == "gpt-4o"
     assert payload["trust_score"] == 88.0
     assert payload["hallucination_risk"] == "LOW"
     assert payload["critique"] == "No issues."
@@ -330,6 +346,8 @@ def test_get_analysis_completed_returns_full_result(tmp_path: Path):
     assert payload["claims"][0]["status"] == "SUPPORTED"
     assert len(payload["evidence"]) == 1
     assert payload["evidence"][0]["source_type"] == "WEB_SEARCH"
+    assert len(payload["timeline"]) == 1
+    assert payload["timeline"][0]["agent"] == "extractor"
 
 
 def test_get_analysis_failed_returns_error(tmp_path: Path):

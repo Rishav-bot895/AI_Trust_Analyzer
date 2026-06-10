@@ -22,6 +22,7 @@ from app.schemas.analysis import (
 
 
 comparison_router = APIRouter(tags=["comparison"])
+PROCESSING_MODEL_NAME = "gemini-3.1-flash-lite"
 
 
 @comparison_router.post("/compare", response_model=ComparisonResponse)
@@ -40,16 +41,20 @@ async def compare_models(
                 analysis_id=analysis_id,
                 prompt=payload.prompt,
                 response=payload.response,
-                model_name=model_name,
+                model_name=PROCESSING_MODEL_NAME,
             )
         except Exception as exc:
             return AnalysisResponse(
                 id=analysis_id,
                 status=AnalysisStatus.FAILED,
+                prompt=payload.prompt,
+                response=payload.response,
+                model_name=model_name,
                 trust_score=None,
                 hallucination_risk=None,
                 claims=[],
                 evidence=[],
+                timeline=[],
                 critique=None,
                 verdict=None,
                 created_at=created_at,
@@ -61,10 +66,14 @@ async def compare_models(
         return AnalysisResponse(
             id=analysis_id,
             status=AnalysisStatus.FAILED if failed else AnalysisStatus.COMPLETED,
+            prompt=payload.prompt,
+            response=payload.response,
+            model_name=model_name,
             trust_score=state.get("trust_score"),
             hallucination_risk=state.get("hallucination_risk"),
             claims=state.get("claims") or [],
             evidence=state.get("evidence") or [],
+            timeline=state.get("timeline") or [],
             critique=state.get("critique"),
             verdict=state.get("verdict"),
             created_at=created_at,

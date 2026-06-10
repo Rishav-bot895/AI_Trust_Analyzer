@@ -65,6 +65,9 @@ type ApiTimelineEvent = {
 type ApiAnalysisResponse = {
   id: string;
   status: AnalysisStatus;
+  prompt?: string | null;
+  response?: string | null;
+  model_name?: string | null;
   trust_score: number | null;
   hallucination_risk: AnalysisResponse["hallucinationRisk"];
   claims: ApiClaim[];
@@ -116,6 +119,9 @@ function toAnalysisResponse(item: ApiAnalysisResponse): AnalysisResponse {
   return {
     id: item.id,
     status: item.status,
+    prompt: item.prompt ?? null,
+    response: item.response ?? null,
+    modelName: item.model_name ?? null,
     trustScore: item.trust_score,
     hallucinationRisk: item.hallucination_risk,
     claims: (item.claims ?? []).map(toClaim),
@@ -292,8 +298,8 @@ export async function checkBackendHealth(): Promise<void> {
   }
 }
 
-export async function getAuthenticatedHistory(
-  accessToken: string,
+export async function getAnalysisHistory(
+  accessToken?: string | null,
   params?: { limit?: number; offset?: number },
 ): Promise<AnalysisListItem[]> {
   const query = new URLSearchParams();
@@ -305,6 +311,9 @@ export async function getAuthenticatedHistory(
   }
 
   const suffix = query.toString() ? `?${query.toString()}` : "";
+  const headers: HeadersInit = accessToken && !isLocalAuthToken(accessToken)
+    ? { Authorization: `Bearer ${accessToken}` }
+    : {};
   const payload = await apiGet<
     Array<{
       id: string;
@@ -315,12 +324,12 @@ export async function getAuthenticatedHistory(
       completed_at: string | null;
       error: string | null;
     }>
-  >(`/api/v1/analyze/history${suffix}`, {
-    Authorization: `Bearer ${accessToken}`,
-  });
+  >(`/api/v1/analyze/history${suffix}`, headers);
 
   return payload.map(toAnalysisListItem);
 }
+
+export const getAuthenticatedHistory = getAnalysisHistory;
 
 export async function submitAnalysis(request: AnalysisRequest): Promise<{ id: string }> {
   const payload = await apiPost<{ id: string; status: string }>("/api/v1/analyze", {

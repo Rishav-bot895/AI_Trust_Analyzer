@@ -11,6 +11,7 @@ import { AgentTimeline } from "./AgentTimeline";
 import { ModelComparisonTable } from "./ModelComparisonTable";
 import { TabNavigation, type TabId } from "./TabNavigation";
 import { ResultsSkeleton, ShimmerStyles } from "./SkeletonLoader";
+import { modelLabel } from "../lib/models";
 
 interface ResultsViewProps {
   analysis?: AnalysisResponse;
@@ -66,6 +67,79 @@ function CritiqueSection({ critique }: { critique: string | null }) {
           {critique}
         </ReactMarkdown>
       </div>
+    </section>
+  );
+}
+
+function OriginalTextBlock({
+  title,
+  value,
+}: {
+  title: string;
+  value: string | null;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const text = value?.trim() || "Not available.";
+  const isLong = text.length > 700;
+  const visibleText = !isExpanded && isLong ? `${text.slice(0, 700).trimEnd()}...` : text;
+
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-surface-high p-4" aria-label={title}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="label">{title}</p>
+        <div className="flex items-center gap-2">
+          {isLong ? (
+            <button
+              type="button"
+              onClick={() => setIsExpanded((current) => !current)}
+              className="rounded border border-border px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
+            >
+              {isExpanded ? "Collapse" : "Expand"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void copyText()}
+            className="rounded border border-border px-3 py-1 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+      </div>
+      <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded border border-border-subtle bg-surface p-3 text-sm leading-relaxed text-text-secondary">
+        {visibleText}
+      </pre>
+    </section>
+  );
+}
+
+function OriginalInputSection({ analysis }: { analysis: AnalysisResponse }) {
+  return (
+    <section className="space-y-3" aria-labelledby="original-input-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="label">Analysis Results</p>
+          <h2 id="original-input-heading" className="text-xl text-text-primary" style={{ fontFamily: "var(--font-serif)" }}>
+            Original Input
+          </h2>
+        </div>
+        <span className="rounded-full border border-border bg-surface-high px-3 py-1 text-xs text-text-secondary">
+          Response model: {modelLabel(analysis.modelName)}
+        </span>
+      </div>
+      <OriginalTextBlock title="Original Prompt" value={analysis.prompt} />
+      <OriginalTextBlock title="AI Response" value={analysis.response} />
     </section>
   );
 }
@@ -181,7 +255,7 @@ export function ResultsView({
     isLoading: isHistoryLoading,
     error: historyError,
     reload: reloadHistory,
-  } = useHistory(showHistoryTab ? authToken : null);
+  } = useHistory(showHistoryTab, authToken);
   const displayedHistory = history.length > 0 ? history : fetchedHistory;
 
   const counts = useMemo<Partial<Record<TabId, number>>>(() => ({
@@ -195,7 +269,6 @@ export function ResultsView({
   const disabledTabs = useMemo<TabId[]>(() => [
     ...((analysis?.claims.length ?? 0)   === 0 ? ["claims"]     as TabId[] : []),
     ...((analysis?.evidence.length ?? 0) === 0 ? ["evidence"]   as TabId[] : []),
-    ...(!analysis?.timeline || analysis.timeline.length === 0 ? ["timeline"] as TabId[] : []),
     ...(!comparison              ? ["compare"] as TabId[] : []),
   ], [analysis, comparison]);
   const currentTab = disabledTabs.includes(activeTab)
@@ -213,6 +286,8 @@ export function ResultsView({
 
   return (
     <div className="w-full space-y-4">
+
+      <OriginalInputSection analysis={analysis} />
 
       <TrustScoreCard
         trustScore={analysis.trustScore}

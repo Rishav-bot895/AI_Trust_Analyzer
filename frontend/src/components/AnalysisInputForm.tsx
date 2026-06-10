@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { AnalysisRequest, UserMode } from "../types/api";
 import { getOrCreateGuestSessionId } from "../lib/guest-session";
+import { PROCESSING_MODEL, RESPONSE_MODELS } from "../lib/models";
 
 interface AnalysisInputFormProps {
   onSubmit: (request: AnalysisRequest) => Promise<void>;
@@ -10,7 +11,6 @@ interface AnalysisInputFormProps {
   userMode: UserMode;
 }
 
-const MODELS = [{ value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" }];
 const PROMPT_MAX_CHARS = 2000;
 const RESPONSE_MAX_CHARS = 10000;
 const RESPONSE_MIN_CHARS = 50;
@@ -19,7 +19,7 @@ const WARNING_THRESHOLD = 0.9;
 export function AnalysisInputForm({ onSubmit, isLoading, userMode }: AnalysisInputFormProps) {
   const [prompt, setPrompt]       = useState("");
   const [response, setResponse]   = useState("");
-  const [modelName, setModelName] = useState(MODELS[0].value);
+  const [modelName, setModelName] = useState(RESPONSE_MODELS[0].value);
   const [touched, setTouched]     = useState({ prompt: false, response: false });
 
   const promptLength = prompt.length;
@@ -79,12 +79,15 @@ export function AnalysisInputForm({ onSubmit, isLoading, userMode }: AnalysisInp
           onChange={(e) => setModelName(e.target.value)}
           className="w-full rounded-md border border-border bg-surface-high px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-accent"
         >
-          {MODELS.map((m) => (
+          {RESPONSE_MODELS.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}
             </option>
           ))}
         </select>
+        <p className="text-xs text-text-muted">
+          Internal analysis runs on {PROCESSING_MODEL.label}.
+        </p>
       </div>
 
       {/* Prompt */}

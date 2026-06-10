@@ -103,7 +103,7 @@ describe("AnalysisInputForm", () => {
       expect(submit).toHaveBeenCalledWith({
         prompt: "Prompt content",
         response: responseText,
-        modelName: "gemini-3.1-flash-lite",
+        modelName: "gpt-4o",
         userMode: "GUEST",
         guestSessionId: "guest-session-123",
       });
@@ -150,5 +150,20 @@ describe("AnalysisInputForm", () => {
     const button = screen.getByRole("button", { name: /Analyzing/i });
     expect(button).toBeDisabled();
     expect(screen.getByText(/Analyzing/)).toBeInTheDocument();
+  });
+
+  test("test_model_dropdown_lists_supported_response_models", () => {
+    render(
+      <AnalysisInputForm
+        onSubmit={vi.fn(async () => undefined)}
+        isLoading={false}
+        userMode="GUEST"
+      />,
+    );
+
+    expect(screen.getByRole("option", { name: "GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Claude Sonnet" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Gemini 2.5 Pro" })).toBeInTheDocument();
+    expect(screen.getByText("Internal analysis runs on Gemini 3.1 Flash Lite.")).toBeInTheDocument();
   });
 });

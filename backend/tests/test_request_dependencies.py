@@ -110,6 +110,19 @@ async def test_get_request_owner_rejects_invalid_signature(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_request_owner_rejects_malformed_bearer_token_before_decode():
+    with pytest.raises(HTTPException) as exc:
+        await get_request_owner(
+            authorization="Bearer not-a-jwt",
+            x_guest_session_id=None,
+            x_guest_session_token=None,
+        )
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Authentication required."
+
+
+@pytest.mark.asyncio
 async def test_get_request_owner_rejects_wrong_issuer_when_configured(monkeypatch):
     monkeypatch.setattr(settings, "SUPABASE_JWT_VERIFY_STRATEGY", "hs256")
     monkeypatch.setattr(settings, "SUPABASE_JWT_ISSUER", "https://expected-issuer")

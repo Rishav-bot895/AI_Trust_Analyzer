@@ -43,11 +43,11 @@ function normalizeAgentKey(agent: string): string {
 function getDurationMs(startedAt: string, completedAt: string): string {
   try {
     const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-    if (isNaN(ms) || ms < 0) return "—";
+    if (isNaN(ms) || ms < 0) return "--";
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
   } catch {
-    return "—";
+    return "--";
   }
 }
 
@@ -62,7 +62,7 @@ function getStatus(event: TimelineEvent | undefined): NodeStatus {
 function statusVisual(status: NodeStatus): { icon: string; color: string; bg: string; border: string } {
   if (status === "completed") {
     return {
-      icon: "✓",
+      icon: "OK",
       color: "var(--color-verified)",
       bg: "rgba(34,197,94,0.10)",
       border: "rgba(34,197,94,0.35)",
@@ -80,7 +80,7 @@ function statusVisual(status: NodeStatus): { icon: string; color: string; bg: st
 
   if (status === "running") {
     return {
-      icon: "⟳",
+      icon: "...",
       color: "var(--color-uncertain)",
       bg: "rgba(245,158,11,0.10)",
       border: "rgba(245,158,11,0.35)",
@@ -88,21 +88,23 @@ function statusVisual(status: NodeStatus): { icon: string; color: string; bg: st
   }
 
   return {
-    icon: "○",
+    icon: "--",
     color: "var(--color-unverified)",
     bg: "rgba(107,114,128,0.10)",
     border: "rgba(107,114,128,0.35)",
   };
 }
 
+function buildTimelineMap(timeline: TimelineEvent[]) {
+  const map = new Map<string, TimelineEvent>();
+  for (const item of timeline) {
+    map.set(normalizeAgentKey(item.agent), item);
+  }
+  return map;
+}
+
 function TimelineCanvas({ timeline }: AgentTimelineProps) {
-  const timelineByAgent = useMemo(() => {
-    const map = new Map<string, TimelineEvent>();
-    for (const item of timeline) {
-      map.set(normalizeAgentKey(item.agent), item);
-    }
-    return map;
-  }, [timeline]);
+  const timelineByAgent = useMemo(() => buildTimelineMap(timeline), [timeline]);
 
   const nodes = useMemo<Array<Node>>(() => {
     return AGENT_ORDER.map((agent, index) => {
@@ -131,7 +133,7 @@ function TimelineCanvas({ timeline }: AgentTimelineProps) {
                 <span className="text-sm font-medium text-text-primary">{agent.label}</span>
                 <span
                   aria-label={`${agent.label} status`}
-                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs font-semibold"
+                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-semibold"
                   style={{
                     color: visual.color,
                     background: visual.bg,
@@ -146,7 +148,7 @@ function TimelineCanvas({ timeline }: AgentTimelineProps) {
           ),
         },
         style: {
-          borderRadius: 12,
+          borderRadius: 8,
           border: `1px solid ${visual.border}`,
           background: "var(--color-surface-high)",
           boxShadow: "none",
@@ -191,8 +193,61 @@ function TimelineCanvas({ timeline }: AgentTimelineProps) {
   );
 }
 
+function TimelineDetails({ timeline }: AgentTimelineProps) {
+  const timelineByAgent = useMemo(() => buildTimelineMap(timeline), [timeline]);
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {AGENT_ORDER.map((agent) => {
+        const event = timelineByAgent.get(agent.id);
+        const duration = event?.startedAt && event?.completedAt
+          ? getDurationMs(event.startedAt, event.completedAt)
+          : "--";
+
+        return (
+          <div key={agent.id} className="rounded-md border border-border bg-surface-high p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-text-primary">{agent.label}</p>
+              <span className="text-xs text-text-muted">{duration}</span>
+            </div>
+            <dl className="mt-2 grid gap-1 text-xs text-text-secondary">
+              <div className="grid grid-cols-[76px_1fr] gap-2">
+                <dt className="text-text-muted">Start</dt>
+                <dd className="break-words">{event?.startedAt || "--"}</dd>
+              </div>
+              <div className="grid grid-cols-[76px_1fr] gap-2">
+                <dt className="text-text-muted">End</dt>
+                <dd className="break-words">{event?.completedAt || "--"}</dd>
+              </div>
+              <div className="grid grid-cols-[76px_1fr] gap-2">
+                <dt className="text-text-muted">Input</dt>
+                <dd className="break-words">{event?.inputSummary || "--"}</dd>
+              </div>
+              <div className="grid grid-cols-[76px_1fr] gap-2">
+                <dt className="text-text-muted">Output</dt>
+                <dd className="break-words">{event?.outputSummary || "--"}</dd>
+              </div>
+            </dl>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AgentTimeline({ timeline }: AgentTimelineProps) {
   const completedCount = timeline.filter((item) => Boolean(item.completedAt)).length;
+
+  if (timeline.length === 0) {
+    return (
+      <div className="card p-6">
+        <p className="label">Agent Timeline</p>
+        <p className="mt-3 rounded-md border border-border bg-surface-high p-4 text-sm text-text-muted">
+          Timeline data not available for this analysis.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6 space-y-4">
@@ -205,6 +260,7 @@ export function AgentTimeline({ timeline }: AgentTimelineProps) {
       <ReactFlowProvider>
         <TimelineCanvas timeline={timeline} />
       </ReactFlowProvider>
+      <TimelineDetails timeline={timeline} />
     </div>
   );
 }

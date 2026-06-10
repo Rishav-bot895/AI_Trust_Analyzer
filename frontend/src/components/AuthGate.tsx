@@ -16,6 +16,7 @@ export function AuthGate({ onAuthenticated, onGuest, isLoading = false }: AuthGa
   const [choice, setChoice] = useState<AuthChoice>("LOGIN");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -23,10 +24,10 @@ export function AuthGate({ onAuthenticated, onGuest, isLoading = false }: AuthGa
 
   const helperText = useMemo(() => {
     if (choice === "LOGIN") {
-      return "If the account exists, we&apos;ll log you in.";
+      return "If the account exists, we'll log you in.";
     }
 
-    return "If the account exists, we&apos;ll log you in. Otherwise we&apos;ll create it.";
+    return "If the account exists, we'll log you in. Otherwise we'll create it.";
   }, [choice]);
 
   async function handleSubmit() {
@@ -161,14 +162,37 @@ export function AuthGate({ onAuthenticated, onGuest, isLoading = false }: AuthGa
 
               <label className="block space-y-2">
                 <span className="text-xs uppercase tracking-[0.22em] text-text-muted">Password</span>
-                <input
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  type="password"
-                  placeholder="Enter your password"
-                  autoComplete={choice === "LOGIN" ? "current-password" : "new-password"}
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-text-primary outline-none transition focus:border-accent"
-                />
+                <div className="relative">
+                  <input
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    autoComplete={choice === "LOGIN" ? "current-password" : "new-password"}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 pr-12 text-sm text-text-primary outline-none transition focus:border-accent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-white/10 hover:text-text-primary"
+                  >
+                    {showPassword ? (
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 3l18 18" />
+                        <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                        <path d="M9.9 5.1A9.9 9.9 0 0 1 12 5c5 0 8.4 4.1 9.5 6.5a11.8 11.8 0 0 1-2.2 3.1" />
+                        <path d="M6.6 6.6A13.1 13.1 0 0 0 2.5 11.5C3.6 13.9 7 18 12 18c1.3 0 2.5-.3 3.6-.8" />
+                      </svg>
+                    ) : (
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+                        <circle cx="12" cy="12" r="2.5" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
 
               <p className="text-xs leading-6 text-text-muted">{helperText}</p>

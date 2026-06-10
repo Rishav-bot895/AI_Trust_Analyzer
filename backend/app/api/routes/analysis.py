@@ -25,6 +25,33 @@ from app.schemas.evidence import Evidence
 
 analysis_router = APIRouter(tags=["analysis"])
 logger = logging.getLogger(__name__)
+PROCESSING_MODEL_NAME = "gemini-3.1-flash-lite"
+
+
+def _parse_timeline(raw_timeline: str | None, *, analysis_id: str) -> list[TimelineEvent]:
+    if not raw_timeline:
+        return []
+
+    try:
+        timeline = json.loads(raw_timeline)
+    except json.JSONDecodeError:
+        logger.warning("Invalid timeline JSON for analysis %s", analysis_id)
+        return []
+
+    if not isinstance(timeline, list):
+        return []
+
+    return [
+        TimelineEvent(
+            agent=str(event.get("agent", "")),
+            started_at=str(event.get("started_at", "")),
+            completed_at=str(event.get("completed_at", "")),
+            input_summary=str(event.get("input_summary", "")),
+            output_summary=str(event.get("output_summary", "")),
+        )
+        for event in timeline
+        if isinstance(event, dict)
+    ]
 
 
 async def _run_analysis_in_background(
@@ -33,7 +60,7 @@ async def _run_analysis_in_background(
     owner: RequestOwner,
     prompt: str,
     response: str,
-    model_name: str,
+    response_model_name: str,
 ) -> None:
     """Execute the analysis workflow and persist terminal state fields."""
     async with AsyncSessionLocal() as db:
@@ -50,7 +77,7 @@ async def _run_analysis_in_background(
                 analysis_id=analysis_id,
                 prompt=prompt,
                 response=response,
-                model_name=model_name,
+                model_name=PROCESSING_MODEL_NAME,
             )
         except Exception as exc:  # pragma: no cover
             logger.exception("Background analysis failed for %s", analysis_id)
@@ -62,7 +89,7 @@ async def _run_analysis_in_background(
                     "analysis_id": analysis_id,
                     "prompt": prompt,
                     "response": response,
-                    "model_name": model_name,
+                    "model_name": response_model_name,
                     "claims": [],
                     "evidence": [],
                     "verified_claims": [],
@@ -92,7 +119,7 @@ async def _run_analysis_in_background(
                     "analysis_id": analysis_id,
                     "prompt": prompt,
                     "response": response,
-                    "model_name": model_name,
+                    "model_name": response_model_name,
                     "claims": [],
                     "evidence": [],
                     "verified_claims": [],
@@ -128,7 +155,7 @@ async def analyze_route(
         owner=owner,
         prompt=payload.prompt,
         response=payload.response,
-        model_name=payload.model_name,
+        response_model_name=payload.model_name,
     )
 
     return {"id": analysis.id, "status": "PENDING"}
@@ -141,16 +168,10 @@ async def get_authenticated_history(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[AnalysisListItem]:
-    """Return analysis history for authenticated users only."""
-    if owner.is_guest:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="History is available for authenticated users only.",
-        )
-
+    """Return analysis history scoped to the requester."""
     repository = AnalysisRepository(db)
-    records = await repository.list_authenticated_history(
-        owner.user_id or "",
+    records = await repository.list_analyses(
+        owner,
         limit=limit,
         offset=offset,
     )
@@ -213,10 +234,14 @@ async def get_analysis_by_id(
     return AnalysisResponse(
         id=analysis.id,
         status=analysis.status,
+        prompt=analysis.prompt,
+        response=analysis.response,
+        model_name=analysis.model_name,
         trust_score=analysis.trust_score,
         hallucination_risk=analysis.hallucination_risk,
         claims=claims,
         evidence=evidence,
+        timeline=_parse_timeline(analysis.timeline, analysis_id=analysis.id),
         critique=analysis.critique,
         verdict=analysis.verdict,
         created_at=analysis.created_at,
@@ -312,26 +337,4 @@ async def get_analysis_timeline(
     if analysis is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found.")
 
-    if not analysis.timeline:
-        return []
-
-    try:
-        timeline = json.loads(analysis.timeline)
-    except json.JSONDecodeError:
-        logger.warning("Invalid timeline JSON for analysis %s", analysis_id)
-        return []
-
-    if not isinstance(timeline, list):
-        return []
-
-    return [
-        TimelineEvent(
-            agent=str(event.get("agent", "")),
-            started_at=str(event.get("started_at", "")),
-            completed_at=str(event.get("completed_at", "")),
-            input_summary=str(event.get("input_summary", "")),
-            output_summary=str(event.get("output_summary", "")),
-        )
-        for event in timeline
-        if isinstance(event, dict)
-    ]
+    return _parse_timeline(analysis.timeline, analysis_id=analysis_id)

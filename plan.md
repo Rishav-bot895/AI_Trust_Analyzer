@@ -101,6 +101,420 @@ Update this section every time a task is completed.
 - [ ] 7.6 Write production environment variables documentation
 
 ---
+# Corrections & Enhancements
+
+## C1 — Fix Model Selection & Comparison Logic
+
+### Problem
+
+The AI model selection dropdown currently only displays **Gemini 3.1 Flash**.
+
+Gemini 3.1 Flash is the internal processing/analysis model used by the AI Trust Analyzer pipeline and should not be the only selectable option.
+
+The dropdown is intended to represent the **LLM that generated the response being analyzed**, so users can compare outputs from different models.
+
+Currently this prevents meaningful model comparisons.
+
+---
+
+### Required Changes
+
+#### Separate Processing Model from Response Model
+
+Introduce two distinct concepts:
+
+**Processing Model (Internal)**
+
+* Used by the backend analysis pipeline.
+* Remains Gemini 3.1 Flash.
+* Hidden from normal user selection.
+
+**Response Model (User Selected)**
+
+* Represents the LLM that originally generated the analyzed response.
+* Selected by the user.
+* Used in comparison views and reporting.
+
+---
+
+### Update Model Dropdown
+
+Populate the dropdown with all supported response-generation models.
+
+Example list:
+
+#### OpenAI
+
+* GPT-4o
+* GPT-4.1
+* GPT-4.1 Mini
+* GPT-4 Turbo
+
+#### Anthropic
+
+* Claude Sonnet
+* Claude Opus
+* Claude Haiku
+
+#### Google
+
+* Gemini 2.5 Pro
+* Gemini 2.5 Flash
+* Gemini 3.1 Flash
+* Gemini 3.1 Pro
+
+#### Others (if supported)
+
+* DeepSeek
+* Grok
+* Llama variants
+
+|   |   |   |   |   |
+| - | - | - | - | - |
+
+---
+
+### Acceptance Criteria
+
+* Dropdown displays all supported response-generation models.
+* Internal analysis continues using Gemini 3.1 Flash.
+* Selected response model is stored with analysis results.
+* Comparison table compares response models correctly.
+* Response model and processing model are clearly separated throughout the application.
+
+---
+
+# C2 — Fix Agent Timeline Visibility
+
+### Problem
+
+The timeline is not visible to users at all.
+
+Although timeline data is being generated, users cannot see any agent execution flow in the UI.
+
+This removes transparency into how the analysis was performed.
+
+---
+
+### Required Changes
+
+#### Verify Timeline Data Flow
+
+Confirm timeline data is:
+
+```text
+Backend
+  → API Response
+  → Frontend State
+  → Timeline Component
+  → UI Rendering
+```
+
+Identify where the data is being shown
+
+---
+
+### Display Per-Agent Information
+
+For each node show:
+
+* Agent Name
+* Start Time
+* End Time
+* Duration
+* Input Summary
+* Output Summary
+
+---
+
+### Empty State
+
+If timeline data is unavailable:
+
+Display:
+
+```text
+Timeline data not available for this analysis.
+```
+
+Do not silently render nothing.
+
+---
+
+### Responsive Behavior
+
+Timeline must be visible on:
+
+* Desktop
+* Tablet
+* Mobile
+
+Ensure it is not hidden by:
+
+* CSS overflow
+* Container height issues
+* React Flow sizing issues
+* Conditional rendering bugs
+
+---
+
+### Acceptance Criteria
+
+* Timeline is visible after analysis completion.
+* All five agents are shown.
+* Agent execution order is visible.
+* Timeline renders correctly across screen sizes.
+* Missing timeline data shows a proper empty state.
+
+---
+
+# C3 — Fix Analysis History Authentication & Retrieval
+
+### Problem
+
+History requests are failing:
+
+```http
+GET /api/v1/analyze/history?limit=10&offset=0
+```
+
+Response:
+
+```text
+401 Unauthorized
+Invalid authentication token: Not enough segments
+```
+
+---
+
+### Root Cause
+
+JWT validation is attempting to parse a malformed token.
+
+Possible causes:
+
+* Empty Authorization header.
+* Missing token.
+* Guest users hitting authenticated endpoints.
+* Invalid token format.
+* Incorrect Supabase session handling.
+
+---
+
+### Required Changes
+
+#### Validate Authorization Headers
+
+Before JWT parsing:
+
+```python
+if not token:
+    return proper_auth_error
+```
+
+Do not attempt JWT decoding on empty values.
+
+---
+
+### Support Guest Mode
+
+Guest users should not trigger JWT validation failures.
+
+Behavior:
+
+#### Authenticated User
+
+* Persistent analysis history.
+* Full history retrieval.
+
+#### Guest User
+
+* Session-scoped history only.
+* Appropriate UI messaging if persistence is unavailable.
+
+---
+
+### Supabase Authentication
+
+Verify:
+
+* Token retrieval.
+* Session refresh.
+* JWT verification.
+* JWKS validation.
+* User extraction logic.
+
+Ensure implementation is compatible with Supabase production authentication.
+
+---
+
+### Frontend Fixes
+
+Verify:
+
+* Authorization header is attached correctly.
+* Guest requests are handled separately.
+* Expired sessions trigger refresh logic.
+* Missing sessions redirect gracefully.
+
+---
+
+### Error Handling
+
+Replace:
+
+```text
+Invalid authentication token: Not enough segments
+```
+
+with user-friendly messages.
+
+Examples:
+
+```text
+Authentication required.
+```
+
+or
+
+```text
+Session expired. Please sign in again.
+```
+
+---
+
+### Acceptance Criteria
+
+* Authenticated users can view history.
+* Guest users receive appropriate history behavior.
+* No "Not enough segments" errors appear.
+* History endpoint returns expected results.
+* Invalid tokens are handled gracefully.
+
+---
+
+# C4 — Display Original Prompt & Response in Results View
+
+### Problem
+
+After analysis completes, users can see trust scores, claims, evidence, and verdicts, but cannot easily see the original prompt and AI response that were analyzed.
+
+This creates poor traceability and makes results harder to interpret.
+
+---
+
+### Required Changes
+
+Add a new section at the top of the Results View.
+
+Position:
+
+```text
+Original Input
+--------------------------------
+
+Prompt
+[Prompt Content]
+
+Response
+[Response Content]
+
+--------------------------------
+
+Trust Score
+Claims
+Evidence
+Timeline
+Comparison
+...
+```
+
+---
+
+### UI Requirements
+
+#### Prompt Card
+
+Display:
+
+```text
+Original Prompt
+```
+
+inside a styled card.
+
+Support:
+
+* Long prompts
+* Expand/collapse
+* Copy button
+
+---
+
+### Response Card
+
+Display:
+
+```text
+AI Response
+```
+
+inside a styled card.
+
+Support:
+
+* Long responses
+* Expand/collapse
+* Copy button
+* Syntax-safe rendering
+
+---
+
+### Layout
+
+Suggested structure:
+
+```text
+Analysis Results
+
+Original Prompt
+┌──────────────────────┐
+│ Prompt Text          │
+└──────────────────────┘
+
+AI Response
+┌──────────────────────┐
+│ Response Text        │
+└──────────────────────┘
+
+Trust Score
+Claims
+Evidence
+Timeline
+Comparison
+```
+
+---
+
+### Persistence
+
+Ensure prompt and response are:
+
+* Returned by the API.
+* Stored in the database.
+* Available when viewing history.
+* Available when reopening past analyses.
+
+---
+
+### Acceptance Criteria
+
+* Prompt appears at the top of the results page.
+* Response appears directly below the prompt.
+* Both are visible in current and historical analyses.
+* Copy functionality works.
+* Expand/collapse works for large content.
+* Trust analysis remains unchanged below these sections.
 
 ## Execution Strategy
 
@@ -2342,67 +2756,6 @@ test_backend_wake_up_success_state_transitions_to_app
 
 ---
 
-## Correction Tasks For Already Completed Work (Retrofit)
-
-These tasks correct already-completed legacy items so the implementation matches the updated architecture.
-
-These tasks capture the required remediation for contradictory verifier/judge outputs observed in production-like runs.
-
-### A) Root Cause Hardening Tasks
-- [x] A.1 Add explicit verifier failure taxonomy and structured error reason codes (`parse_failure`, `schema_mismatch`, `no_evidence`, `low_signal`) in state and logs.
-- [x] A.2 Persist per-claim debug metadata for decision traceability (raw verdict source, fallback reason, polarity source).
-- [x] A.3 Add contradiction detection metrics to monitoring (e.g., `supported_with_all_against_polarity_count`).
-
-### B) Concrete Code-Level Fix Tasks
-- [x] B.1 Update verifier response normalization to robustly handle string, dict, list-of-parts, and object-like content before JSON parsing.
-- [x] B.2 Remove polarity fallback bias: do not default `UNVERIFIABLE` claims to `AGAINST`; use neutral/unknown polarity when stance is unresolved.
-- [x] B.3 Add deterministic sanity checks for polarity assignment (rule-based support/contradiction cues) before persisting evidence polarity.
-- [x] B.4 Enforce claim-status guardrails so strong, high-authority support cannot end as `UNVERIFIABLE` without explicit contradiction.
-- [x] B.5 Update judge verdict parsing to extract text from structured model outputs instead of raw `str(content)` coercion.
-- [x] B.6 Make judge verdict generation consume explicit claim/evidence aggregates (status counts, support vs contradiction totals).
-
-### C) Revised Decision Logic Tasks
-- [x] C.1 Implement three-way evidence polarity classification (`FOR`, `AGAINST`, `UNKNOWN`) with confidence-aware fallback.
-- [x] C.2 Implement weighted claim verification aggregation per claim:
-  - weighted support score from relevance, source authority, and directness
-  - weighted contradiction score from the same factors
-- [x] C.3 Define deterministic status thresholds for `SUPPORTED`, `PARTIALLY_SUPPORTED`, `CONTRADICTED`, `UNSUPPORTED`, `UNVERIFIABLE`.
-- [x] C.4 Replace flat confidence fallback with calibrated confidence formula using agreement, authority, directness, and contradiction penalty.
-- [x] C.5 Add hard consistency constraints before final verdict text is produced (verdict cannot contradict aggregate status distribution).
-
-### D) Corrected Output Validation Tasks
-- [x] D.1 Add golden-output fixtures for known factual examples (including Apollo mission case) with expected claim statuses and polarities.
-- [x] D.2 Create regression assertion set for corrected outcome targets:
-  - supportive sources map to `FOR`
-  - claims with strong support are not `UNVERIFIABLE`
-  - trust score/risk align with aggregate claim outcomes
-- [x] D.3 Add API snapshot contract tests to ensure output fields remain stable and human-readable.
-
-### E) Unit and Integration Test Tasks
-- [x] E.1 Add verifier unit tests for structured model content parsing (string/dict/list/object variants).
-- [x] E.2 Add verifier unit tests for neutral fallback polarity on unresolved verdicts.
-- [x] E.3 Add verifier unit tests for "strong support cannot become UNVERIFIABLE" invariant.
-- [x] E.4 Add judge unit tests for structured verdict extraction and anti-garbage text handling.
-- [x] E.5 Add judge/verifier consistency tests preventing score/verdict contradictions.
-- [x] E.6 Add end-to-end workflow regression tests reproducing previous failure and asserting corrected behavior.
-- [x] E.7 Run targeted test suite with repository interpreter policy:
-  - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_verifier.py -q`
-  - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_judge.py -q`
-  - `d:\Project\AI_Trust_Analyzer\.venv\Scripts\python.exe -m pytest backend/tests/test_workflow.py -q`
-
-### F) Guardrails and Future Prevention Tasks
-- [x] F.1 Add pre-persist consistency validator to block contradictory states (for example, `SUPPORTED` with only `AGAINST` evidence).
-- [x] F.2 Add post-judge validation to reject verdict text that conflicts with status distribution and trigger controlled regeneration.
-- [x] F.3 Add release gate canary suite with fixed factual benchmark prompts and invariants.
-- [x] F.4 Add observability dashboards/alerts for contradiction ratios, fallback usage, and parse failure rates.
-- [x] F.5 Document decision-policy contract in backend docs and keep test matrix aligned with policy changes.
-
-### Execution Order for Correction Tasks
-- [x] G.1 Implement B.1-B.6 first (parser, polarity, claim-status, judge parsing).
-- [x] G.2 Implement C.1-C.5 next (decision logic + confidence calibration).
-- [x] G.3 Implement E.1-E.6 and run E.7 test commands.
-- [x] G.4 Implement F.1-F.5 guardrails and canary release checks.
-- [x] G.5 Re-run full backend test suite and mark this section complete only after all invariants pass.
 
 
 ---
