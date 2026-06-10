@@ -10,7 +10,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.agents.workflow import run_analysis
 from app.api.dependencies import get_request_owner
 from app.db.repository import RequestOwner
 from app.schemas.analysis import (
@@ -23,6 +22,18 @@ from app.schemas.analysis import (
 
 comparison_router = APIRouter(tags=["comparison"])
 PROCESSING_MODEL_NAME = "gemini-3.1-flash-lite"
+
+
+async def run_analysis(*, analysis_id: str, prompt: str, response: str, model_name: str):
+    """Lazy-load the analysis workflow so app startup can bind before ML imports."""
+    from app.agents.workflow import run_analysis as _run_analysis
+
+    return await _run_analysis(
+        analysis_id=analysis_id,
+        prompt=prompt,
+        response=response,
+        model_name=model_name,
+    )
 
 
 @comparison_router.post("/compare", response_model=ComparisonResponse)

@@ -12,7 +12,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.workflow import run_analysis
 from app.api.dependencies import get_request_owner
 from app.api.middleware import limiter
 from app.db.repository import AnalysisRepository, RequestOwner
@@ -73,6 +72,8 @@ async def _run_analysis_in_background(
         await db.commit()
 
         try:
+            from app.agents.workflow import run_analysis
+
             state = await run_analysis(
                 analysis_id=analysis_id,
                 prompt=prompt,

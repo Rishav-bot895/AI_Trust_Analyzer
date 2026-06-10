@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sentence_transformers import SentenceTransformer
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 
 _engine: Engine | None = None
-_embedder: SentenceTransformer | None = None
+_embedder: "SentenceTransformer | None" = None
 
 
 def _sync_database_url() -> str:
@@ -32,10 +34,12 @@ def _get_engine() -> Engine:
     return _engine
 
 
-def _get_embedder() -> SentenceTransformer:
+def _get_embedder() -> "SentenceTransformer":
     """Create or return singleton embedding model."""
     global _embedder
     if _embedder is None:
+        from sentence_transformers import SentenceTransformer
+
         _embedder = SentenceTransformer("all-MiniLM-L6-v2")
     return _embedder
 
